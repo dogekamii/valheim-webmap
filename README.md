@@ -1,68 +1,94 @@
 # Valheim WebMap
 
-This server side mod creates a web based map that shows live players and allows shared exploration. After port forwarding the correct port, you can share `http://your_ip:port` to anyone else and they can see the map too. **Clients do not need to have any mods installed!**
+A **server-side** Valheim dedicated-server mod that publishes a live browser map with player positions, exploration, pings, and shared pins. Players use unmodded clients — no client mod is required.
 
-For players to show up on the map, they must set **visible to other players** in the in-game map screen. Press `m` to bring up the map settings.
-
-Currently only works with Valheim dedicated server.
+> [!IMPORTANT]
+> **Current-Valheim compatibility:** WebMap **v2.7.2** was tested successfully on **2026-07-27** with **Valheim Dedicated Server `l-0.221.12`** (Steam build **`21981590`**, network version **36**) on Linux, using BepInExPack Valheim **5.4.2333** and a crossplay-enabled AMP instance. This compatibility statement applies to that exact tested server build; newer Valheim builds should be validated before production rollout.
 
 ## Features
 
-* A explorable map of your Valheim world in your browser that you can zoom with the mousewheel or pinch zoom on mobile.
-* Players can place their own pins with chat commands (see below for more info)
-* Map pings from in game players will show up on the web map as well.
-* Connected players list.
-* Auto follow player feature.
-* Connect and chat messages.
-* Discord server status and player join/leave notifications.
+- Explorable world map in a desktop or mobile browser.
+- Live player positions for players who enable **Visible to other players** in Valheim's in-game map settings.
+- In-game pings shown on the browser map.
+- Player-created shared pins via in-game chat commands.
+- Connected-player list, auto-follow, and connect/chat messages.
+- Optional Discord server-status and player join/leave notifications.
 
-![screenshot](screenshot.webp)
+![WebMap screenshot](screenshot.webp)
+
+## Compatibility and release status
+
+| Component | Tested value |
+|---|---|
+| WebMap | `2.7.2` |
+| Valheim Dedicated Server | `l-0.221.12` |
+| Steam dedicated-server build | `21981590` |
+| Valheim network version | `36` |
+| Loader | BepInExPack Valheim `5.4.2333` |
+| Server mode | Linux dedicated server, crossplay enabled |
+
+The v2.7.2 change replaces the historical world-readiness startup path with a guarded current-Valheim world-setup startup path. The HTTP/WebSocket map listener starts once the server world is available, rather than depending on an older `ZoneSystem.Load` path that may not run for current worlds.
 
 ## Installation
 
-1. Assuming you have [BepInEx] installed and working, place the WebMap directory in:
+1. Install a Valheim-compatible BepInEx loader. For current AMP Valheim templates, use **BepInExPack Valheim** and preserve AMP's Doorstop/environment configuration.
+2. Copy the release `WebMap` directory into the dedicated server's plugin directory:
 
-       Steam\steamapps\common\Valheim dedicated server\BepInEx\plugins\WebMap
+   ```text
+   <Valheim dedicated server>/BepInEx/plugins/WebMap
+   ```
 
-2. After starting the server for the first time a default configuration file will be created in:
+3. Start the server once. WebMap creates its configuration file at:
 
-       Steam\steamapps\common\Valheim dedicated server\BepInEx\config
+   ```text
+   <Valheim dedicated server>/BepInEx/config/com.github.h0tw1r3.valheim.webmap.cfg
+   ```
 
-3. Stop the server, edit the configuration, start the server. Always stop the server
-   before making configuration changes, _otherwise they will be lost on shutdown_.
+4. Stop the server before changing configuration. Edit the file, then start the server again. Configuration changes made while the server runs can be overwritten on shutdown.
+5. By default, browse to `http://<server-ip>:3000` from a permitted network. For public access, put WebMap behind an HTTPS reverse proxy; do **not** expose the raw listener directly to the Internet.
+
+### Multiple server instances on one host
+
+Every running Valheim/WebMap instance must use a distinct `server_port`. Set this under the `[Server]` section of its generated configuration file:
+
+```ini
+[Server]
+server_port = 3001
+```
+
+The default is `3000`. A reverse proxy should pass both ordinary HTTP traffic and WebSocket upgrades to the selected backend port.
 
 ## Updating
 
-If you are updating, one additional thing you and anyone else using the web map might need to do is __clear your browser cache__.
+1. Back up the server's `BepInEx/plugins/WebMap` directory and any map data before replacing files.
+2. Replace the plugin directory with the new release payload.
+3. Restart the dedicated server and confirm the WebMap listener is present in `BepInEx/LogOutput.log`.
+4. If the UI appears stale, hard-refresh or clear the browser cache.
 
-You may also be able to hold down the `shift` key and click the reload button in your browser.
+## Chat commands
 
-## Chat Commands
+Press `Enter` to open Valheim chat. Commands are not case-sensitive.
 
-This mod supports placing pins with chat commands. Press `Enter` to start chatting in game. The commands are as follows:
+- `!pin` — place a dot pin at your current position.
+- `!pin my pin name` — place a named dot pin.
+- `!pin [pin-type] [text]` — create `dot`, `fire`, `mine`, `house`, or `cave` pins. Example: `!pin house my awesome base`
+- `!undoPin` — delete your most recent pin.
+- `!deletePin [text]` — delete the most recent pin whose text matches exactly.
 
-* `!pin` - Place a "dot" pin with no text on the map where you are currently standing.
-* `!pin my pin name` - Place a "dot" pin with "my pin name" under it on the map where you are currently standing.
-* `!pin [pin-type] [text]` - Place a pin of a certain type with optional text under it on the map where you are currently standing.
-    * Pin types are: `dot`, `fire`, `mine`, `house` and `cave`. Example command: `/pin house my awesome base`
-* `!undoPin` - Delete your most recent pin.
-* `!deletePin [text]` - Delete the most recent pin that matches the text exactly.
+The server configuration controls the maximum number of pins per player; older pins are removed if the limit is exceeded.
 
-If a player creates too many pins, their oldest pin will be removed. There is a setting to control how many pins a player can create.
+## Security
 
-_Commands are not case sensitive._
+A WebMap instance exposes player positions, exploration state, and shared pins to anyone who can reach it. Restrict network reachability deliberately and use reverse-proxy authentication and HTTPS before public publication.
 
-## Licence
+## Licence and credit
 
-Where applicable, assume stuff is under the MIT licence.
+Where applicable, assume content is under the MIT licence.
 
-## Credit
+- Current fork maintenance: [dogekamii](https://github.com/dogekamii)
+- Upstream maintenance: [Jeff Clark / h0tw1r3](https://github.com/h0tw1r3)
+- Original work: [Kyle Paulsen](https://github.com/kylepaulsen)
+- Background by [webtreats], released under [CC BY 2.0].
 
-* Currently maintained by [Jeff Clark](https://github.com/h0tw1r3)
-* Original work by [Kyle Paulsen](https://github.com/kylepaulsen)
-* Background by [webtreats], released under the [CC BY 2.0] license.
-
-[BepInEx]: https://github.com/BepInEx/BepInEx
-[node]: https://nodejs.org/en/download/
 [webtreats]: https://www.flickr.com/photos/webtreatsetc/4081217254
 [CC BY 2.0]: https://creativecommons.org/licenses/by/2.0/

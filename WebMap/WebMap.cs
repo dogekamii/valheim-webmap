@@ -26,7 +26,7 @@ namespace WebMap
     {
         public const string GUID = "com.github.h0tw1r3.valheim.webmap";
         public const string NAME = "WebMap";
-        public const string VERSION = "2.7.1";
+        public const string VERSION = "2.7.2";
 
         private static readonly string[] ALLOWED_PINS = { "dot", "fire", "mine", "house", "cave" };
 
@@ -47,6 +47,8 @@ namespace WebMap
         private static Harmony harmony;
 
         public static WebMap instance;
+
+        private bool mapServerStarted;
 
         //The Awake() method is run at the very start when the game is initialized.
         public void Awake()
@@ -74,6 +76,47 @@ namespace WebMap
             StaticCoroutine.Start(SaveFogTextureLoop());
             StaticCoroutine.Start(UpdateFogTextureLoop());
             NotifyOnline();
+        }
+
+        // Unity moved these APIs to ImageConversionModule, which targets
+        // netstandard2.1. Resolve either the legacy instance API or the current
+        // static API at runtime so this BepInEx 5/net48 plugin stays loadable.
+        public static byte[] EncodeTextureToPng(Texture2D texture)
+        {
+            MethodInfo legacyMethod = AccessTools.Method(typeof(Texture2D), "EncodeToPNG", Type.EmptyTypes);
+            if (legacyMethod != null)
+            {
+                return (byte[])legacyMethod.Invoke(texture, null);
+            }
+
+            Type imageConversionType = AccessTools.TypeByName("UnityEngine.ImageConversion");
+            MethodInfo currentMethod = AccessTools.Method(imageConversionType, "EncodeToPNG", new[] { typeof(Texture2D) });
+            if (currentMethod != null)
+            {
+                return (byte[])currentMethod.Invoke(null, new object[] { texture });
+            }
+
+            throw new MissingMethodException("Unity image encoding API is unavailable");
+        }
+
+        public static void LoadTextureFromImage(Texture2D texture, byte[] imageData)
+        {
+            MethodInfo legacyMethod = AccessTools.Method(typeof(Texture2D), "LoadImage", new[] { typeof(byte[]) });
+            if (legacyMethod != null)
+            {
+                legacyMethod.Invoke(texture, new object[] { imageData });
+                return;
+            }
+
+            Type imageConversionType = AccessTools.TypeByName("UnityEngine.ImageConversion");
+            MethodInfo currentMethod = AccessTools.Method(imageConversionType, "LoadImage", new[] { typeof(Texture2D), typeof(byte[]) });
+            if (currentMethod != null)
+            {
+                currentMethod.Invoke(null, new object[] { texture, imageData });
+                return;
+            }
+
+            throw new MissingMethodException("Unity image decoding API is unavailable");
         }
 
         public void SetServerInfo(bool openServer, bool publicServer, string serverName, string password, string worldName, string worldSeed)
@@ -147,7 +190,7 @@ namespace WebMap
             {
                 Texture2D fogTexture = new Texture2D(WebMapConfig.TEXTURE_SIZE, WebMapConfig.TEXTURE_SIZE);
                 byte[] fogBytes = File.ReadAllBytes(fogImagePath);
-                fogTexture.LoadImage(fogBytes);
+                LoadTextureFromImage(fogTexture, fogBytes);
                 mapDataServer.fogTexture = fogTexture;
             }
             catch (Exception e)
@@ -159,7 +202,7 @@ namespace WebMap
                 for (int t = 0; t < fogColors.Length; t++) fogColors[t] = Color.black;
 
                 fogTexture.SetPixels32(fogColors);
-                byte[] fogPngBytes = fogTexture.EncodeToPNG();
+                byte[] fogPngBytes = EncodeTextureToPng(fogTexture);
 
                 mapDataServer.fogTexture = fogTexture;
                 try
@@ -259,7 +302,7 @@ namespace WebMap
         {
             if (mapDataServer.players.Count > 0 && fogTextureNeedsSaving)
             {
-                byte[] pngBytes = mapDataServer.fogTexture.EncodeToPNG();
+                byte[] pngBytes = EncodeTextureToPng(mapDataServer.fogTexture);
 
                 if (WebMapConfig.DEBUG) ZLog.Log("Saving Fog");
 
@@ -435,7 +478,7 @@ namespace WebMap
                 Texture2D newTexture = new Texture2D(WebMapConfig.TEXTURE_SIZE, WebMapConfig.TEXTURE_SIZE,
                     TextureFormat.RGBA32, false);
                 newTexture.SetPixels(newColors);
-                byte[] pngBytes = newTexture.EncodeToPNG();
+                byte[] pngBytes = EncodeTextureToPng(newTexture);
 
                 mapDataServer.mapImageData = pngBytes;
                 try
@@ -450,26 +493,61 @@ namespace WebMap
             }
         }
 
-        [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Load))]
-        private class ZoneSystemLoadPatch
+        // Valheim 0.220+ calls ZoneSystem.Load only when an existing .db world is
+        // available. New worlds take the WorldSetup path directly, so initialize
+        // WebMap from the common post-world-load hook instead.
+        public void StartMapServerOnce()
+        {
+            if (mapServerStarted)
+            {
+                return;
+            }
+
+            if (mapDataServer == null)
+            {
+                ZLog.LogError("WebMap: world setup completed before the map data server was created");
+                return;
+            }
+
+            ZoneSystem.LocationInstance startLocation;
+            if (ZoneSystem.instance.FindClosestLocation("StartTemple", Vector3.zero, out startLocation))
+            {
+                WebMapConfig.WORLD_START_POS = startLocation.m_position;
+                ZLog.Log("WebMap: starting point " + WebMapConfig.WORLD_START_POS.ToString());
+            }
+            else
+            {
+                ZLog.LogError("WebMap: failed to find starting point");
+            }
+
+            try
+            {
+                mapDataServer.ListenAsync();
+                mapServerStarted = true;
+            }
+            catch (Exception e)
+            {
+                ZLog.LogError("WebMap: failed to start HTTP server: " + e.Message);
+                return;
+            }
+
+            try
+            {
+                Online();
+            }
+            catch (Exception e)
+            {
+                // A notification integration must not take down the working map service.
+                ZLog.LogError("WebMap: online notification failed: " + e.Message);
+            }
+        }
+
+        [HarmonyPatch(typeof(ZNet), "WorldSetup")]
+        private class ZNetWorldSetupPatch
         {
             private static void Postfix()
             {
-                ZoneSystem.LocationInstance startLocation;
-                if (ZoneSystem.instance.FindClosestLocation("StartTemple", Vector3.zero, out startLocation))
-                {
-                    var p = startLocation.m_position;
-                    WebMapConfig.WORLD_START_POS = p;
-                    ZLog.Log("WebMap: starting point " + WebMapConfig.WORLD_START_POS.ToString());
-                }
-                else
-                {
-                    ZLog.LogError("WebMap: failed to find starting point");
-                }
-
-                WebMap.instance.Online();
-
-                mapDataServer.ListenAsync();
+                WebMap.instance.StartMapServerOnce();
             }
         }
 
