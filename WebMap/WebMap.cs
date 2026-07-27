@@ -48,6 +48,8 @@ namespace WebMap
 
         public static WebMap instance;
 
+        private bool mapServerStarted;
+
         //The Awake() method is run at the very start when the game is initialized.
         public void Awake()
         {
@@ -450,26 +452,61 @@ namespace WebMap
             }
         }
 
-        [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Load))]
-        private class ZoneSystemLoadPatch
+        // Valheim 0.220+ calls ZoneSystem.Load only when an existing .db world is
+        // available. New worlds take the WorldSetup path directly, so initialize
+        // WebMap from the common post-world-load hook instead.
+        public void StartMapServerOnce()
+        {
+            if (mapServerStarted)
+            {
+                return;
+            }
+
+            if (mapDataServer == null)
+            {
+                ZLog.LogError("WebMap: world setup completed before the map data server was created");
+                return;
+            }
+
+            ZoneSystem.LocationInstance startLocation;
+            if (ZoneSystem.instance.FindClosestLocation("StartTemple", Vector3.zero, out startLocation))
+            {
+                WebMapConfig.WORLD_START_POS = startLocation.m_position;
+                ZLog.Log("WebMap: starting point " + WebMapConfig.WORLD_START_POS.ToString());
+            }
+            else
+            {
+                ZLog.LogError("WebMap: failed to find starting point");
+            }
+
+            try
+            {
+                mapDataServer.ListenAsync();
+                mapServerStarted = true;
+            }
+            catch (Exception e)
+            {
+                ZLog.LogError("WebMap: failed to start HTTP server: " + e.Message);
+                return;
+            }
+
+            try
+            {
+                Online();
+            }
+            catch (Exception e)
+            {
+                // A notification integration must not take down the working map service.
+                ZLog.LogError("WebMap: online notification failed: " + e.Message);
+            }
+        }
+
+        [HarmonyPatch(typeof(ZNet), "WorldSetup")]
+        private class ZNetWorldSetupPatch
         {
             private static void Postfix()
             {
-                ZoneSystem.LocationInstance startLocation;
-                if (ZoneSystem.instance.FindClosestLocation("StartTemple", Vector3.zero, out startLocation))
-                {
-                    var p = startLocation.m_position;
-                    WebMapConfig.WORLD_START_POS = p;
-                    ZLog.Log("WebMap: starting point " + WebMapConfig.WORLD_START_POS.ToString());
-                }
-                else
-                {
-                    ZLog.LogError("WebMap: failed to find starting point");
-                }
-
-                WebMap.instance.Online();
-
-                mapDataServer.ListenAsync();
+                WebMap.instance.StartMapServerOnce();
             }
         }
 
