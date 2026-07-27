@@ -16,3 +16,8 @@ assert '.EncodeToPNG()' not in source, "do not compile directly against ImageCon
 assert '.LoadImage(' not in source, "do not compile directly against ImageConversionModule"
 assert 'EncodeTextureToPng' in source
 assert 'LoadTextureFromImage' in source
+
+project = (Path(__file__).parents[1] / "WebMap" / "WebMap.csproj").read_text()
+assert 'UnityEngine.ImageConversionModule' not in project, (
+    "net48 plugin must not reference the current netstandard2.1 image module"
+)
