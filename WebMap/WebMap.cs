@@ -78,6 +78,47 @@ namespace WebMap
             NotifyOnline();
         }
 
+        // Unity moved these APIs to ImageConversionModule, which targets
+        // netstandard2.1. Resolve either the legacy instance API or the current
+        // static API at runtime so this BepInEx 5/net48 plugin stays loadable.
+        public static byte[] EncodeTextureToPng(Texture2D texture)
+        {
+            MethodInfo legacyMethod = AccessTools.Method(typeof(Texture2D), "EncodeToPNG", Type.EmptyTypes);
+            if (legacyMethod != null)
+            {
+                return (byte[])legacyMethod.Invoke(texture, null);
+            }
+
+            Type imageConversionType = AccessTools.TypeByName("UnityEngine.ImageConversion");
+            MethodInfo currentMethod = AccessTools.Method(imageConversionType, "EncodeToPNG", new[] { typeof(Texture2D) });
+            if (currentMethod != null)
+            {
+                return (byte[])currentMethod.Invoke(null, new object[] { texture });
+            }
+
+            throw new MissingMethodException("Unity image encoding API is unavailable");
+        }
+
+        public static void LoadTextureFromImage(Texture2D texture, byte[] imageData)
+        {
+            MethodInfo legacyMethod = AccessTools.Method(typeof(Texture2D), "LoadImage", new[] { typeof(byte[]) });
+            if (legacyMethod != null)
+            {
+                legacyMethod.Invoke(texture, new object[] { imageData });
+                return;
+            }
+
+            Type imageConversionType = AccessTools.TypeByName("UnityEngine.ImageConversion");
+            MethodInfo currentMethod = AccessTools.Method(imageConversionType, "LoadImage", new[] { typeof(Texture2D), typeof(byte[]) });
+            if (currentMethod != null)
+            {
+                currentMethod.Invoke(null, new object[] { texture, imageData });
+                return;
+            }
+
+            throw new MissingMethodException("Unity image decoding API is unavailable");
+        }
+
         public void SetServerInfo(bool openServer, bool publicServer, string serverName, string password, string worldName, string worldSeed)
         {
             serverInfo = new Dictionary<string, object>();
@@ -149,7 +190,7 @@ namespace WebMap
             {
                 Texture2D fogTexture = new Texture2D(WebMapConfig.TEXTURE_SIZE, WebMapConfig.TEXTURE_SIZE);
                 byte[] fogBytes = File.ReadAllBytes(fogImagePath);
-                fogTexture.LoadImage(fogBytes);
+                LoadTextureFromImage(fogTexture, fogBytes);
                 mapDataServer.fogTexture = fogTexture;
             }
             catch (Exception e)
@@ -161,7 +202,7 @@ namespace WebMap
                 for (int t = 0; t < fogColors.Length; t++) fogColors[t] = Color.black;
 
                 fogTexture.SetPixels32(fogColors);
-                byte[] fogPngBytes = fogTexture.EncodeToPNG();
+                byte[] fogPngBytes = EncodeTextureToPng(fogTexture);
 
                 mapDataServer.fogTexture = fogTexture;
                 try
@@ -261,7 +302,7 @@ namespace WebMap
         {
             if (mapDataServer.players.Count > 0 && fogTextureNeedsSaving)
             {
-                byte[] pngBytes = mapDataServer.fogTexture.EncodeToPNG();
+                byte[] pngBytes = EncodeTextureToPng(mapDataServer.fogTexture);
 
                 if (WebMapConfig.DEBUG) ZLog.Log("Saving Fog");
 
@@ -437,7 +478,7 @@ namespace WebMap
                 Texture2D newTexture = new Texture2D(WebMapConfig.TEXTURE_SIZE, WebMapConfig.TEXTURE_SIZE,
                     TextureFormat.RGBA32, false);
                 newTexture.SetPixels(newColors);
-                byte[] pngBytes = newTexture.EncodeToPNG();
+                byte[] pngBytes = EncodeTextureToPng(newTexture);
 
                 mapDataServer.mapImageData = pngBytes;
                 try

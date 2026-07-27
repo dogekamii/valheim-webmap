@@ -9,3 +9,10 @@ assert '[HarmonyPatch(typeof(ZNet), "WorldSetup")]' in source, (
 )
 assert 'ZoneSystemLoadPatch' not in source, "obsolete ZoneSystem.Load patch must be removed"
 assert 'StartMapServerOnce' in source, "world-ready startup must be idempotent"
+
+# Current Unity ships ImageConversion in a netstandard2.1 module. Keep the
+# net48 BepInEx plugin binary compatible by resolving those APIs at runtime.
+assert '.EncodeToPNG()' not in source, "do not compile directly against ImageConversionModule"
+assert '.LoadImage(' not in source, "do not compile directly against ImageConversionModule"
+assert 'EncodeTextureToPng' in source
+assert 'LoadTextureFromImage' in source
