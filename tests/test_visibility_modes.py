@@ -24,7 +24,7 @@ assert "visibilityMode !== 'full'" in map_source
 assert "visibilityMode === 'hybrid'" in map_source
 assert 'HYBRID_MAP_OPACITY' in map_source
 
-# The runtime WebSocket dependency must be copied to the release output.
+# CopyLocal remains a project-level contract; the release-build test verifies output.
 assert '<Private>true</Private>' in project_source
 
 # Operators need a discoverable, owner-controlled configuration contract.

@@ -20,7 +20,22 @@ jobs:
         run: |
           python tests/test_current_valheim_lifecycle.py
           python tests/test_visibility_modes.py
+          python tests/test_release_build_contract.py
       - name: Build browser bundle
         run: |
           npm ci
           npm run build
+
+  release-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release image
+        run: docker build --build-arg BEPINEX_RELEASE=5.4.23.2 --tag webmap-release-build .
+      - name: Build release output
+        run: docker run --rm --volume "$PWD:/build" --workdir /build webmap-release-build ./build.sh --configuration Release
+      - name: Verify release build output
+        run: |
+          test -s WebMap/bin/Release/WebMap.dll
+          test -s WebMap/bin/Release/websocket-sharp.dll
+          test -s WebMap/web/main.js

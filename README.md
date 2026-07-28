@@ -16,21 +16,51 @@ A **server-side** Valheim dedicated-server mod that publishes a live browser map
 
 ![WebMap screenshot](screenshot.webp)
 
+## Compatibility and release status
+
+| Component | Tested value |
+|---|---|
+| WebMap | `2.7.2` |
+| Valheim Dedicated Server | `l-0.221.12` |
+| Steam dedicated-server build | `21981590` |
+| Valheim network version | `36` |
+| Loader | BepInExPack Valheim `5.4.2333` |
+| Server mode | Linux dedicated server, crossplay enabled |
+
+The v2.7.2 change replaces the historical world-readiness startup path with a guarded current-Valheim world-setup startup path. The HTTP/WebSocket map listener starts once the server world is available, rather than depending on an older `ZoneSystem.Load` path that may not run for current worlds.
+
 ## Installation
 
 1. Install a Valheim-compatible BepInEx loader. For current AMP Valheim templates, use **BepInExPack Valheim** and preserve AMP's Doorstop/environment configuration.
-2. Copy the release `WebMap` directory into `<Valheim dedicated server>/BepInEx/plugins/WebMap`.
-3. Start the server once. WebMap creates `BepInEx/config/com.github.h0tw1r3.valheim.webmap.cfg`.
-4. Stop the server before changing configuration. Edit the file, then start the server again.
+2. Copy the release `WebMap` directory into the dedicated server's plugin directory:
+
+   ```text
+   <Valheim dedicated server>/BepInEx/plugins/WebMap
+   ```
+
+3. Start the server once. WebMap creates its configuration file at:
+
+   ```text
+   <Valheim dedicated server>/BepInEx/config/com.github.h0tw1r3.valheim.webmap.cfg
+   ```
+
+4. Stop the server before changing configuration. Edit the file, then start the server again. Configuration changes made while the server runs can be overwritten on shutdown.
 5. By default, browse to `http://<server-ip>:3000` from a permitted network. For public access, put WebMap behind an HTTPS reverse proxy; do **not** expose the raw listener directly to the Internet.
 
 ### Multiple server instances on one host
 
-Every running instance needs a distinct `[Server] server_port` (default `3000`). A reverse proxy should pass ordinary HTTP traffic and WebSocket upgrades to the selected backend port.
+Every running Valheim/WebMap instance must use a distinct `server_port`. Set this under the `[Server]` section of its generated configuration file:
+
+```ini
+[Server]
+server_port = 3001
+```
+
+The default is `3000`. A reverse proxy should pass both ordinary HTTP traffic and WebSocket upgrades to the selected backend port.
 
 ### Map visibility policy
 
-The server owner controls visibility with this generated configuration value:
+The server owner controls browser-map visibility with this generated configuration value:
 
 ```ini
 [World]
@@ -46,18 +76,22 @@ This policy is sent by the server in its configuration response and is not expos
 
 ## Updating
 
-1. Back up the server's `BepInEx/plugins/WebMap` directory and map data.
-2. Replace the plugin directory with the release payload, including `websocket-sharp.dll` beside `WebMap.dll`.
-3. Restart and confirm the WebMap listener in `BepInEx/LogOutput.log`.
-4. If the UI appears stale, hard-refresh or clear browser cache.
+1. Back up the server's `BepInEx/plugins/WebMap` directory and any map data before replacing files.
+2. Replace the plugin directory with the new release payload.
+3. Restart the dedicated server and confirm the WebMap listener is present in `BepInEx/LogOutput.log`.
+4. If the UI appears stale, hard-refresh or clear the browser cache.
 
 ## Chat commands
 
+Press `Enter` to open Valheim chat. Commands are not case-sensitive.
+
 - `!pin` — place a dot pin at your current position.
 - `!pin my pin name` — place a named dot pin.
-- `!pin [pin-type] [text]` — create `dot`, `fire`, `mine`, `house`, or `cave` pins.
+- `!pin [pin-type] [text]` — create `dot`, `fire`, `mine`, `house`, or `cave` pins. Example: `!pin house my awesome base`
 - `!undoPin` — delete your most recent pin.
 - `!deletePin [text]` — delete the most recent pin whose text matches exactly.
+
+The server configuration controls the maximum number of pins per player; older pins are removed if the limit is exceeded.
 
 ## Security
 
@@ -70,3 +104,7 @@ Where applicable, assume content is under the MIT licence.
 - Current fork maintenance: [dogekamii](https://github.com/dogekamii)
 - Upstream maintenance: [Jeff Clark / h0tw1r3](https://github.com/h0tw1r3)
 - Original work: [Kyle Paulsen](https://github.com/kylepaulsen)
+- Background by [webtreats], released under [CC BY 2.0].
+
+[webtreats]: https://www.flickr.com/photos/webtreatsetc/4081217254
+[CC BY 2.0]: https://creativecommons.org/licenses/by/2.0/
