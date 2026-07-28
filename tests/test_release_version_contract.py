@@ -4,6 +4,8 @@ import json
 import re
 import xml.etree.ElementTree as ET
 
+# These are the release metadata fields consumed by BepInEx, Thunderstore,
+# npm, and the reproducible browser-build lockfile.
 EXPECTED_VERSION = "2.7.3"
 repo = Path(__file__).parents[1]
 
