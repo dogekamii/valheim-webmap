@@ -14,7 +14,9 @@ cache_patch = (repo / "WebMap" / "Patches" / "FrontendCacheHeadersPatch.cs").rea
 index = (web / "index.html").read_text()
 
 assert '[HarmonyPatch(typeof(MapDataServer), "ServeStaticFiles")]' in cache_patch
-assert 'rawRequestPath != "/" && rawRequestPath != "/index.html"' in cache_patch
+assert 'e.Request.Url.AbsolutePath' in cache_patch, (
+    "the entrypoint matcher must ignore a query string in RawUrl"
+)
 assert 'HttpResponseHeader.CacheControl, "no-store"' in cache_patch
 
 match = re.search(r'<script src="(main\.[0-9a-f]+\.js)"></script>', index)
