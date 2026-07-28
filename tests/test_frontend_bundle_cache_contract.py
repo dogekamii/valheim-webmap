@@ -10,11 +10,12 @@ import re
 
 repo = Path(__file__).parents[1]
 web = repo / "WebMap" / "web"
-server_source = (repo / "WebMap" / "MapDataServer.cs").read_text()
+cache_patch = (repo / "WebMap" / "Patches" / "FrontendCacheHeadersPatch.cs").read_text()
 index = (web / "index.html").read_text()
 
-assert 'requestedFile == "index.html"' in server_source
-assert 'HttpResponseHeader.CacheControl, "no-store"' in server_source
+assert '[HarmonyPatch(typeof(MapDataServer), "ServeStaticFiles")]' in cache_patch
+assert 'rawRequestPath != "/" && rawRequestPath != "/index.html"' in cache_patch
+assert 'HttpResponseHeader.CacheControl, "no-store"' in cache_patch
 
 match = re.search(r'<script src="(main\.[0-9a-f]+\.js)"></script>', index)
 assert match, "index.html must reference a content-addressed main bundle"
