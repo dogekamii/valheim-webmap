@@ -16,15 +16,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Build browser bundle
+        run: |
+          npm ci
+          npm run build
       - name: Run static regression tests
         run: |
           python tests/test_current_valheim_lifecycle.py
           python tests/test_visibility_modes.py
           python tests/test_release_build_contract.py
-      - name: Build browser bundle
-        run: |
-          npm ci
-          npm run build
+          python tests/test_frontend_bundle_cache_contract.py
 
   release-build:
     runs-on: ubuntu-latest
