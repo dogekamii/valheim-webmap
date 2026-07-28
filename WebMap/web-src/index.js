@@ -3,6 +3,7 @@ import websocket from "./websocket";
 import map from "./map";
 import players from "./players";
 import ui, { createUi } from "./ui";
+import { normalizeWorldVisibilityMode } from "./visibility";
 
 const mapImage = document.createElement('img');
 const fogImage = document.createElement('img');
@@ -47,6 +48,7 @@ const fetchConfig = fetch('config').then(res => res.json()).then(config => {
     constants.MAX_MESSAGES = config.max_messages || 100;
     constants.ALWAYS_MAP = config.always_map;
     constants.ALWAYS_VISIBLE = config.always_visible;
+    constants.WORLD_VISIBILITY_MODE = normalizeWorldVisibilityMode(config.world_visibility_mode);
     document.title = `Valheim WebMap - ${constants.WORLD_NAME}`;
     createStyleSheet(`
 		.mapIcon.player {
@@ -68,7 +70,8 @@ const setup = async () => {
     map.init({
         mapImage,
         fogImage,
-        zoom: constants.DEFAULT_ZOOM
+        zoom: constants.DEFAULT_ZOOM,
+        visibilityMode: constants.WORLD_VISIBILITY_MODE
     });
 
     map.addIcon({
