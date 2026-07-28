@@ -2,15 +2,17 @@
 
 ## Unreleased
 
+## 2.7.3 — 2026-07-28
+
 ### Added
 
 - Server-owner `world_visibility_mode` policy with `fogged` (default), `hybrid`, and `full` browser-map rendering modes.
-- Explicit release-output copying for `websocket-sharp.dll`.
+- Explicit release-output inclusion of `websocket-sharp.dll`.
 
 ### Fixed
 
-- Generate a SHA-256-content-addressed frontend bundle for every browser build and have the generated HTML reference it, preventing CDN clients from pairing new WebMap configuration with an old `main.js` bundle.
-- Document the no-store HTML entrypoint and scoped CDN-purge recovery procedure.
+- Generate a fingerprinted JavaScript bundle for every browser build and have the generated HTML reference it, preventing CDN clients from pairing new WebMap configuration with stale `main.js`.
+- Serve the HTML entrypoint with `no-store` caching so browsers retrieve the current fingerprinted bundle reference.
 
 ## 2.7.2 — 2026-07-27
 

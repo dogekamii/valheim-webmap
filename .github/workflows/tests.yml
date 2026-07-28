@@ -26,6 +26,7 @@ jobs:
           python tests/test_visibility_modes.py
           python tests/test_release_build_contract.py
           python tests/test_frontend_bundle_cache_contract.py
+          python tests/test_release_version_contract.py
 
   release-build:
     runs-on: ubuntu-latest
