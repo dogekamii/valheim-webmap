@@ -58,6 +58,22 @@ server_port = 3001
 
 The default is `3000`. A reverse proxy should pass both ordinary HTTP traffic and WebSocket upgrades to the selected backend port.
 
+### Map visibility policy
+
+The server owner controls browser-map visibility with this generated configuration value:
+
+```ini
+[World]
+## Controls the browser map fog. Valid values are fogged, hybrid, and full.
+world_visibility_mode = fogged
+```
+
+- `fogged` — **default** and legacy behavior: explored areas are visible and all other areas remain fogged.
+- `hybrid` — keeps the exploration fog, while showing the server-generated terrain map faintly underneath it.
+- `full` — hides the fog overlay and shows the full generated map.
+
+This policy is sent by the server in its configuration response and is not exposed as a viewer preference or UI toggle. Restart WebMap after changing it.
+
 ## Updating
 
 1. Back up the server's `BepInEx/plugins/WebMap` directory and any map data before replacing files.

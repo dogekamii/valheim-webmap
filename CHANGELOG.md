@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- Server-owner `world_visibility_mode` policy with `fogged` (default), `hybrid`, and `full` browser-map rendering modes.
+- Explicit release-output copying for `websocket-sharp.dll`.
+
 ## 2.7.2 — 2026-07-27
 
 ### Fixed

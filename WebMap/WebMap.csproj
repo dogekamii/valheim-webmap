@@ -80,6 +80,7 @@
     </Reference>
     <Reference Include="WebsocketSharp">
       <HintPath>..\libs\websocket-sharp.dll</HintPath>
+      <Private>true</Private>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
   </ItemGroup>

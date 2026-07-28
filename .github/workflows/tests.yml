@@ -1,0 +1,41 @@
+name: Tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  static-regression-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run static regression tests
+        run: |
+          python tests/test_current_valheim_lifecycle.py
+          python tests/test_visibility_modes.py
+          python tests/test_release_build_contract.py
+      - name: Build browser bundle
+        run: |
+          npm ci
+          npm run build
+
+  release-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build release image
+        run: docker build --build-arg BEPINEX_RELEASE=5.4.23.2 --tag webmap-release-build .
+      - name: Build release output
+        run: docker run --rm --volume "$PWD:/build" --workdir /build webmap-release-build ./build.sh --configuration Release
+      - name: Verify release build output
+        run: |
+          test -s WebMap/bin/Release/net48/WebMap.dll
+          test -s WebMap/bin/Release/net48/websocket-sharp.dll
+          test -s WebMap/web/main.js

@@ -5,7 +5,8 @@ const constants = {
     EXPLORE_RADIUS: 100,
     DEFAULT_ZOOM: 200,
     ALWAYS_MAP: false,
-    ALWAYS_VISIBLE: false
+    ALWAYS_VISIBLE: false,
+    WORLD_VISIBILITY_MODE: 'fogged'
 };
 
 constants.COORD_OFFSET = constants.CANVAS_WIDTH / 2;

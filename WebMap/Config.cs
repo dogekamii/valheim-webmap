@@ -18,8 +18,14 @@ namespace WebMap
         public static int MAX_MESSAGES = 100;
         public static bool ALWAYS_MAP = true;
         public static bool ALWAYS_VISIBLE = false;
+        public static string WORLD_VISIBILITY_MODE = "fogged";
         public static bool DEBUG = false;
         public static bool TEST = false;
+
+        private static readonly HashSet<string> WORLD_VISIBILITY_MODES = new HashSet<string>
+        {
+            "fogged", "hybrid", "full"
+        };
 
         public static int SERVER_PORT = 3000;
         public static float PLAYER_UPDATE_INTERVAL = 1f;
@@ -88,6 +94,12 @@ namespace WebMap
                 WebMapConfig.ALWAYS_VISIBLE,
                 "Completely ignore the players preference to be hidden.").Value;
 
+            WORLD_VISIBILITY_MODE = NormalizeWorldVisibilityMode(config.Bind("World", "world_visibility_mode",
+                WebMapConfig.WORLD_VISIBILITY_MODE,
+                new ConfigDescription(
+                    "Controls the browser map fog. fogged preserves normal exploration fog, hybrid shows a faint generated map beneath fog, and full hides the fog overlay.",
+                    new AcceptableValueList<string>("fogged", "hybrid", "full"))).Value);
+
             DEBUG = config.Bind("Server", "debug",
                 WebMapConfig.DEBUG,
                 "Output debugging information.").Value;
@@ -107,6 +119,12 @@ namespace WebMap
             URL = config.Bind("Server", "webmap_url",
                 WebMapConfig.URL,
                 "URL to view the web map.").Value;
+        }
+
+        internal static string NormalizeWorldVisibilityMode(string value)
+        {
+            string normalized = value?.ToLowerInvariant();
+            return normalized != null && WORLD_VISIBILITY_MODES.Contains(normalized) ? normalized : "fogged";
         }
 
         public static string GetWorldName()
@@ -144,6 +162,7 @@ namespace WebMap
             config["max_messages"] = MAX_MESSAGES;
             config["always_map"] = ALWAYS_MAP;
             config["always_visible"] = ALWAYS_VISIBLE;
+            config["world_visibility_mode"] = WORLD_VISIBILITY_MODE;
 
             string json = DictionaryToJson(config);
             return json;
