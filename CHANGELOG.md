@@ -7,6 +7,11 @@
 - Server-owner `world_visibility_mode` policy with `fogged` (default), `hybrid`, and `full` browser-map rendering modes.
 - Explicit release-output copying for `websocket-sharp.dll`.
 
+### Fixed
+
+- Generate a SHA-256-content-addressed frontend bundle for every browser build and have the generated HTML reference it, preventing CDN clients from pairing new WebMap configuration with an old `main.js` bundle.
+- Document the no-store HTML entrypoint and scoped CDN-purge recovery procedure.
+
 ## 2.7.2 — 2026-07-27
 
 ### Fixed

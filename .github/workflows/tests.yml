@@ -16,15 +16,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Build browser bundle
+        run: |
+          npm ci
+          npm run build
       - name: Run static regression tests
         run: |
           python tests/test_current_valheim_lifecycle.py
           python tests/test_visibility_modes.py
           python tests/test_release_build_contract.py
-      - name: Build browser bundle
-        run: |
-          npm ci
-          npm run build
+          python tests/test_frontend_bundle_cache_contract.py
 
   release-build:
     runs-on: ubuntu-latest
@@ -38,4 +39,5 @@ jobs:
         run: |
           test -s WebMap/bin/Release/net48/WebMap.dll
           test -s WebMap/bin/Release/net48/websocket-sharp.dll
-          test -s WebMap/web/main.js
+          test -n "$(find WebMap/web -maxdepth 1 -name 'main.*.js' -size +0c -print -quit)"
+          test ! -e WebMap/web/main.js
