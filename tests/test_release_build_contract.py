@@ -30,11 +30,14 @@ assert websocket.findtext("Private") == "true"
 
 # Exercise the repository's real Docker + build.sh + build.cake mechanics on
 # CI, then verify the release output directory contains the plugin, its managed
-# runtime dependency, and the browser bundle produced by BuildNpm.
+# runtime dependency, and the content-addressed browser bundle produced by
+# BuildNpm.  The old fixed main.js URL would allow a CDN to pair new config with
+# a stale JavaScript bundle.
 assert "Build release output" in workflow
 assert "docker build --build-arg BEPINEX_RELEASE=" in workflow
 assert "webmap-release-build" in workflow
 assert "./build.sh --configuration Release" in workflow
 assert "test -s WebMap/bin/Release/net48/WebMap.dll" in workflow
 assert "test -s WebMap/bin/Release/net48/websocket-sharp.dll" in workflow
-assert "test -s WebMap/web/main.js" in workflow
+assert "find WebMap/web -maxdepth 1 -name 'main.*.js' -size +0c" in workflow
+assert "test ! -e WebMap/web/main.js" in workflow

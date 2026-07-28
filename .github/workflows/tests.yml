@@ -39,4 +39,5 @@ jobs:
         run: |
           test -s WebMap/bin/Release/net48/WebMap.dll
           test -s WebMap/bin/Release/net48/websocket-sharp.dll
-          test -s WebMap/web/main.js
+          test -n "$(find WebMap/web -maxdepth 1 -name 'main.*.js' -size +0c -print -quit)"
+          test ! -e WebMap/web/main.js
