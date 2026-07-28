@@ -15,8 +15,8 @@ namespace WebMap.Patches
         [HarmonyPrefix]
         private static bool ServeUncachedIndex(HttpRequestEventArgs e, string ___publicRoot)
         {
-            string rawRequestPath = e.Request.RawUrl;
-            if (rawRequestPath != "/" && rawRequestPath != "/index.html")
+            string requestPath = e.Request.Url.AbsolutePath;
+            if (requestPath != "/" && requestPath != "/index.html")
             {
                 return true;
             }
