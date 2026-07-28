@@ -36,6 +36,6 @@ jobs:
         run: docker run --rm --volume "$PWD:/build" --workdir /build webmap-release-build ./build.sh --configuration Release
       - name: Verify release build output
         run: |
-          test -s WebMap/bin/Release/WebMap.dll
-          test -s WebMap/bin/Release/websocket-sharp.dll
+          test -s WebMap/bin/Release/net48/WebMap.dll
+          test -s WebMap/bin/Release/net48/websocket-sharp.dll
           test -s WebMap/web/main.js

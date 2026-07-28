@@ -35,6 +35,6 @@ assert "Build release output" in workflow
 assert "docker build --build-arg BEPINEX_RELEASE=" in workflow
 assert "webmap-release-build" in workflow
 assert "./build.sh --configuration Release" in workflow
-assert "test -s WebMap/bin/Release/WebMap.dll" in workflow
-assert "test -s WebMap/bin/Release/websocket-sharp.dll" in workflow
+assert "test -s WebMap/bin/Release/net48/WebMap.dll" in workflow
+assert "test -s WebMap/bin/Release/net48/websocket-sharp.dll" in workflow
 assert "test -s WebMap/web/main.js" in workflow
