@@ -32,6 +32,16 @@ def test_disabled_link_feature_leaves_link_text_on_the_ordinary_chat_path():
     assert "return true;" in claim[gate:parse]
 
 
+def test_unrecognized_link_and_normal_chat_remain_on_the_ordinary_chat_path():
+    claim = CLAIM.read_text(encoding="utf-8")
+
+    match = claim.index("LinkCommand.Match(message)")
+    ordinary = claim.index("if (!match.Success)", match)
+    ordinary_return = claim.index("return true;", ordinary)
+    divert = claim.index("data.m_methodHash = IgnoredLinkClaimMethodHash", ordinary)
+    assert match < ordinary < ordinary_return < divert
+
+
 def test_recognized_claim_fails_closed_after_identity_or_journal_handling_fails():
     claim = CLAIM.read_text(encoding="utf-8")
 
