@@ -47,9 +47,9 @@ namespace WebMap
                 };
                 AppendJson(JsonUtility.ToJson(linkClaimEvent));
             }
-            catch (Exception exception)
+            catch
             {
-                ZLog.LogWarning("WebMap: quorum activity journal append failed: " + exception.Message);
+                ZLog.LogWarning("WebMap: quorum link claim journal append failed");
             }
         }
 
