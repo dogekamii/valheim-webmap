@@ -144,6 +144,7 @@ namespace WebMap
         {
             string message = $"player _{peer.m_playerName}_ joined";
             discordWebHook.SendMessage($"🎮 **{serverInfo["serverName"]}** {message}");
+            QuorumActivityJournal.AppendJoin(peer);
             mapDataServer.AddMessage(peer.m_uid, (int)Talker.Type.Normal, "Server", message);
         }
 
@@ -151,6 +152,7 @@ namespace WebMap
         {
             string message = $"player _{peer.m_playerName}_ left";
             discordWebHook.SendMessage($"🎮 **{serverInfo["serverName"]}** {message}");
+            QuorumActivityJournal.AppendLeave(peer);
             MessageHud.instance.MessageAll(MessageHud.MessageType.Center, message);
             mapDataServer.AddMessage(peer.m_uid, (int)Talker.Type.Normal, "Server", message);
         }

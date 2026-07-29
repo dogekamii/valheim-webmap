@@ -21,6 +21,7 @@ namespace WebMap
         public static string WORLD_VISIBILITY_MODE = "fogged";
         public static bool DEBUG = false;
         public static bool TEST = false;
+        public static bool QUORUM_ACTIVITY_JOURNAL_ENABLED = false;
 
         private static readonly HashSet<string> WORLD_VISIBILITY_MODES = new HashSet<string>
         {
@@ -107,6 +108,10 @@ namespace WebMap
             DEBUG = config.Bind("Server", "test",
                 WebMapConfig.TEST,
                 "Enable test features (bugs).").Value;
+
+            QUORUM_ACTIVITY_JOURNAL_ENABLED = config.Bind("Quorum Bot", "activity_journal_enabled",
+                WebMapConfig.QUORUM_ACTIVITY_JOURNAL_ENABLED,
+                "Append private local player join/leave events for the separate Valheim Quorum Bot.").Value;
 
             DISCORD_WEBHOOK = config.Bind("Server", "discord_webhook",
                 WebMapConfig.DISCORD_WEBHOOK,
