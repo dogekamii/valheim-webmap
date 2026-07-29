@@ -22,11 +22,8 @@ jobs:
           npm run build
       - name: Run static regression tests
         run: |
-          python tests/test_current_valheim_lifecycle.py
-          python tests/test_visibility_modes.py
-          python tests/test_release_build_contract.py
-          python tests/test_frontend_bundle_cache_contract.py
-          python tests/test_release_version_contract.py
+          python -m pip install --disable-pip-version-check pytest
+          python -m pytest tests
 
   release-build:
     runs-on: ubuntu-latest
