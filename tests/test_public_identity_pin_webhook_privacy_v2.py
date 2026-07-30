@@ -28,9 +28,9 @@ def test_public_identity_is_process_ephemeral_js_safe_and_used_only_for_pin_owne
     assert "RandomNumberGenerator.Create()" in SERVER
     assert "9007199254740991" in SERVER
     assert "HashSet<long>" in SERVER
-    assert 'Alias = $"Player {aliasNumber}"' in SERVER
+    assert '$"Player {aliasNumber}"' in SERVER
     serializer = method_body(SERVER, "private static bool TrySerializePublicPin")
-    assert "PublicIdentity.ForOwner" in serializer
+    assert "PublicIdentity.TryForOwner" in serializer
     player_snapshot = method_body(SERVER, "private string BuildPlayerSnapshot")
     assert "PublicIdentity" not in player_snapshot and "Alias" not in player_snapshot
     assert "m_uid" not in player_snapshot and "m_playerName" not in player_snapshot
@@ -81,7 +81,7 @@ def test_future_pin_records_omit_player_names_but_old_rows_remain_readable():
     assert "name" not in re.sub(r"public void AddPin\([^)]*\)", "", add_pin)
     assert "string.Empty" in add_pin or '",,"' in add_pin
     serializer = method_body(SERVER, "private static bool TrySerializePublicPin")
-    assert "pinParts.Length" in serializer and "PublicIdentity.ForOwner" in serializer
+    assert "pinParts.Length" in serializer and "PublicIdentity.TryForOwner" in serializer
     assert "pinParts[3]" not in serializer or "identity.Alias" in serializer
     assert "return false" in serializer
 

@@ -44,7 +44,8 @@ def test_only_hashed_javascript_is_static_immutable():
     assert "IsHashedMainScript" in static_files
     assert 'requestedFile == "index.html"' in static_files
     assert "SetNoStore" in static_files
-    assert '"public, max-age=604800, immutable"' in static_files
+    assert "SetImmutable(res)" in static_files
+    assert '"public, max-age=604800, immutable"' in SERVER
 
 
 def test_typed_client_json_is_serializer_backed_and_metadata_minimal():
