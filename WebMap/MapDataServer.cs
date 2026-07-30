@@ -38,20 +38,6 @@ namespace WebMap
 
     public class WebSocketHandler : WebSocketBehavior
     {
-        protected override void OnOpen()
-        {
-            string endpoint = Context.Headers.Get("X-Forwarded-For");
-            if (endpoint.IsNullOrEmpty())
-            {
-                endpoint = Context.UserEndPoint.ToString();
-            }
-            ZLog.Log("WebMap: new visitor connected from " + endpoint);
-            base.OnOpen();
-        }
-
-        // protected override void OnClose(CloseEventArgs e) {
-        // }
-
         protected override void OnMessage(MessageEventArgs e)
         {
             if (e.Data.ToString() == "players")
@@ -288,7 +274,7 @@ namespace WebMap
                     return true;
                 case "/messages":
                     res.Headers.Add(HttpResponseHeader.CacheControl, "no-cache");
-                    res.ContentType = "applicaion/json";
+                    res.ContentType = "application/json";
                     res.StatusCode = 200;
                     List<string> tosend = new List<string>();
                     sentMessages.ForEach(message =>
