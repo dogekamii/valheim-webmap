@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SERVER = (ROOT / "WebMap" / "MapDataServer.cs").read_text(encoding="utf-8")
 WEBMAP = (ROOT / "WebMap" / "WebMap.cs").read_text(encoding="utf-8")
 WEBHOOK = (ROOT / "WebMap" / "DiscordWebHook.cs").read_text(encoding="utf-8")
+WORKFLOW = (ROOT / ".github" / "workflows" / "tests.yml").read_text(encoding="utf-8")
 WEB_SOURCES = list((ROOT / "WebMap" / "web-src").glob("*.js"))
 
 
@@ -109,3 +110,12 @@ def test_chat_and_ping_logs_never_include_protocol_content_or_exception_details(
 def test_frontend_does_not_log_protocol_data_to_the_browser_console():
     offenders = [path.name for path in WEB_SOURCES if "console." in path.read_text(encoding="utf-8")]
     assert offenders == []
+
+
+def test_release_job_inspects_packaged_js_and_dll_privacy_markers():
+    assert "Inspect packaged privacy boundaries" in WORKFLOW
+    assert 'glob("main.*.js")' in WORKFLOW
+    assert 'Path("WebMap/bin/Release/net48/WebMap.dll")' in WORKFLOW
+    assert '"console."' in WORKFLOW
+    assert '"GetServerIP"' in WORKFLOW
+    assert '"WebMap: (chat)"' in WORKFLOW
