@@ -12,6 +12,7 @@ var tempDir = System.IO.Path.GetTempPath();
 var websocketSourceRoot = "/opt/websocket-sharp-src";
 var websocketSourceProject = $"{websocketSourceRoot}/websocket-sharp/websocket-sharp.csproj";
 var websocketBuildPath = System.IO.Path.Combine(tempDir, "websocket-sharp-build");
+var websocketIntermediatePath = System.IO.Path.Combine(websocketBuildPath, "obj");
 var websocketAssemblyPath = System.IO.Path.Combine(websocketBuildPath, "websocket-sharp.dll");
 var websocketCommit = "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1";
 
@@ -95,9 +96,10 @@ Task("BuildWebsocketSharp")
 
     EnsureDirectoryExists(websocketBuildPath);
     CleanDirectory(websocketBuildPath);
+    EnsureDirectoryExists(websocketIntermediatePath);
     var sourceBuildExitCode = RunCheckedBuildCommand(
         "websocket source xbuild",
-        $"xbuild \"{websocketSourceProject}\" /target:Rebuild /property:Configuration=Release /property:OutputPath=\"{websocketBuildPath}/\" /verbosity:minimal"
+        $"xbuild \"{websocketSourceProject}\" /target:Rebuild /property:Configuration=Release /property:OutputPath=\"{websocketBuildPath}/\" /property:BaseIntermediateOutputPath=\"{websocketIntermediatePath}/\" /property:IntermediateOutputPath=\"{websocketIntermediatePath}/\" /verbosity:minimal"
     );
     if (sourceBuildExitCode != 0 || !System.IO.File.Exists(websocketAssemblyPath) || new System.IO.FileInfo(websocketAssemblyPath).Length == 0)
     {
