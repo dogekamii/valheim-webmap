@@ -46,9 +46,7 @@ const actions = {
             if (typeof playerLines[0] !== 'undefined') {
                 const flags = playerLines.shift();
                 const flag_types = ['dead', 'pvp', 'inbed'];
-                console.log(flags);
                 for (let i = 0; i < flag_types.length; i++) {
-                    console.log(i + " " + flag_types[i] + " " + flags[i]);
                     newPlayer.flags[flag_types[i]] = Boolean(Number(flags[i]));
                 }
             }
@@ -118,8 +116,6 @@ const init = () => {
         const actionFunc = actions[action];
         if (actionFunc) {
             actionFunc(lines, message);
-        } else {
-            console.log("unknown websocket message: ", e.data);
         }
     });
 
