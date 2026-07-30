@@ -54,6 +54,24 @@ namespace WebMap
                 return true;
             }
         }
+
+        internal static void ReconcileOwners(ISet<string> retainedOwners)
+        {
+            lock (Sync)
+            {
+                if (Identities.Count == 0) return;
+                List<string> staleOwners = new List<string>();
+                foreach (KeyValuePair<string, PublicIdentityValue> pair in Identities)
+                    if (retainedOwners == null || !retainedOwners.Contains(pair.Key)) staleOwners.Add(pair.Key);
+                foreach (string owner in staleOwners)
+                {
+                    PublicIdentityValue identity;
+                    if (!Identities.TryGetValue(owner, out identity)) continue;
+                    Identities.Remove(owner);
+                    UsedIds.Remove(identity.Id);
+                }
+            }
+        }
     }
 
     public class WebSocketHandler : WebSocketBehavior
@@ -372,6 +390,7 @@ namespace WebMap
                         if (TryParsePrivatePin(pin, out parsed)) privatePins.Add(pin);
                     }
                 }
+                PublicIdentity.ReconcileOwners(GetRetainedOwnersLocked());
             }
             PublishPinSnapshot();
         }
@@ -426,6 +445,7 @@ namespace WebMap
             lock (pinSync)
             {
                 if (privatePins.Count >= MaxPrivatePins) return;
+                PublicIdentity.ReconcileOwners(GetRetainedOwnersLocked());
                 PublicIdentityValue identity;
                 if (!PublicIdentity.TryForOwner(parsed[0], out identity)) return;
                 privatePins.Add(record);
@@ -448,22 +468,35 @@ namespace WebMap
                 string[] parts;
                 if (TryParsePrivatePin(privatePins[idx], out parts)) pinId = parts[1];
                 privatePins.RemoveAt(idx);
+                PublicIdentity.ReconcileOwners(GetRetainedOwnersLocked());
             }
             PublishPinSnapshot();
             if (!string.IsNullOrEmpty(pinId)) webSocketHandler.Sessions.Broadcast("rmpin\n" + pinId);
         }
 
+        private HashSet<string> GetRetainedOwnersLocked()
+        {
+            HashSet<string> owners = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string pin in privatePins)
+            {
+                string owner;
+                if (TryGetPinOwner(pin, out owner)) owners.Add(owner);
+            }
+            return owners;
+        }
+
         private void PublishPinSnapshot()
         {
-            string[] source;
-            lock (pinSync) source = privatePins.ToArray();
-            List<string> serialized = new List<string>(Math.Min(source.Length, MaxPrivatePins));
-            foreach (string pin in source)
+            lock (pinSync)
             {
-                string publicPin;
-                if (TrySerializePublicPin(pin, out publicPin)) serialized.Add(publicPin);
+                List<string> serialized = new List<string>(Math.Min(privatePins.Count, MaxPrivatePins));
+                foreach (string pin in privatePins)
+                {
+                    string publicPin;
+                    if (TrySerializePublicPin(pin, out publicPin)) serialized.Add(publicPin);
+                }
+                pinSnapshot = Encoding.UTF8.GetBytes(string.Join("\n", serialized));
             }
-            pinSnapshot = Encoding.UTF8.GetBytes(string.Join("\n", serialized));
         }
 
         internal static bool IsValidOwnerKey(string owner) => !string.IsNullOrWhiteSpace(owner) && IsSafeRecordField(owner, MaxOwnerKeyLength, false);
