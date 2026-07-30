@@ -6,7 +6,7 @@
 
 ### Security and privacy
 
-- Remove public per-player records, positions, names, chat/messages, and ping telemetry; the presence protocol now publishes an aggregate-only online count.
+- Remove public per-player records, positions, names, chat and message telemetry, and ping telemetry; the presence protocol now publishes an aggregate-only online count.
 - Keep intentional public pins while replacing internal owner values with process-ephemeral aliases and JavaScript-safe IDs; validate private pin records and bound retained pins, owner mappings, coordinates, IDs, types, and text.
 - Remove seed, internal world-name, open/public flag, server-info, and private endpoint/path metadata from public runtime and browser output.
 - Apply no-store or immutable cache policy as appropriate, MIME-sniffing, referrer, frame, and same-origin Content Security Policy headers across normal, static, and error responses.

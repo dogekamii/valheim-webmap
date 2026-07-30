@@ -116,7 +116,7 @@ def test_readme_describes_the_aggregate_only_public_contract_and_private_optiona
         "exposes player positions", "stable identities", "public chat", "public player names",
     ):
         assert forbidden.lower() not in readme.lower()
-    assert "activity and linking do not select an RSVP presence policy" in readme.lower()
+    assert "activity and linking do not select an rsvp presence policy" in readme.lower()
 
 
 def test_changelog_274_records_the_candidate_without_removed_route_claims():
