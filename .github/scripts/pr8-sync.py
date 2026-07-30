@@ -59,7 +59,6 @@ server_path.write_text(server.replace(method_marker, method_block), encoding="ut
 phase("workflow-privacy-marker")
 workflow_path = Path(".github/workflows/tests.yml")
 workflow = workflow_path.read_text(encoding="utf-8")
-assert "Inspect packaged privacy boundaries" not in workflow
 privacy_step = r'''      - name: Inspect packaged privacy boundaries
         run: |
           python - <<'PYPRIVACY'
@@ -91,5 +90,6 @@ privacy_step = r'''      - name: Inspect packaged privacy boundaries
           print(f"Inspected {bundles[0].name}, WebMap.dll, and websocket-sharp.dll inventory")
           PYPRIVACY
 '''
-workflow_path.write_text(workflow + privacy_step, encoding="utf-8")
+if "Inspect packaged privacy boundaries" not in workflow:
+    workflow_path.write_text(workflow + privacy_step, encoding="utf-8")
 phase("complete")
