@@ -19,7 +19,6 @@ namespace WebMap
         {
             public string type;
             public string player_id;
-            public string player_name;
             public long occurred_at_unix;
         }
 
@@ -72,7 +71,6 @@ namespace WebMap
                 {
                     type = type,
                     player_id = peer.m_uid.ToString(),
-                    player_name = peer.m_playerName ?? string.Empty,
                     occurred_at_unix = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
                 };
                 AppendJson(JsonUtility.ToJson(activityEvent));

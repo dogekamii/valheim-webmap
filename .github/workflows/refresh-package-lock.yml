@@ -1,0 +1,41 @@
+name: Refresh audited package lock
+
+on:
+  push:
+    branches:
+      - fix/review-security-privacy-packaging
+
+permissions:
+  contents: write
+
+jobs:
+  refresh-package-lock:
+    if: ${{ github.event.head_commit.message != 'chore: refresh audited package lock' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/review-security-privacy-packaging
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Apply non-breaking npm audit fix
+        run: npm audit fix --package-lock-only
+      - name: Verify audited dependency set
+        run: |
+          npm audit
+          npm ci
+          npm run build
+          test "$(node -p "require('./node_modules/webpack/package.json').version")" = "5.109.2"
+          test "$(node -p "require('./node_modules/ajv/package.json').version")" = "8.20.0"
+          test "$(node -p "require('./node_modules/fast-uri/package.json').version")" = "3.1.4"
+      - name: Commit generated lockfile
+        run: |
+          if git diff --quiet -- package-lock.json; then
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package-lock.json
+          git commit -m 'chore: refresh audited package lock'
+          git push origin HEAD:fix/review-security-privacy-packaging
