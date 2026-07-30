@@ -58,6 +58,21 @@ def test_activity_journal_is_private_before_the_first_record_is_written():
     assert "File.AppendAllText" not in journal
 
 
+def test_activity_journal_minimizes_new_records_and_preserves_existing_lines():
+    journal = JOURNAL.read_text(encoding="utf-8")
+    event_match = re.search(
+        r"private class ActivityEvent\s*\{(?P<body>.*?)\n\s*\}", journal, re.DOTALL
+    )
+
+    assert event_match is not None
+    fields = re.findall(
+        r"public\s+(?:string|long)\s+(\w+);", event_match.group("body")
+    )
+    assert fields == ["type", "player_id", "occurred_at_unix"]
+    assert "peer.m_playerName" not in journal
+    assert "FileMode.Append" in journal
+
+
 def test_activity_journal_failures_never_log_exception_details():
     journal = JOURNAL.read_text(encoding="utf-8")
 
