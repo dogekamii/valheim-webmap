@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEngine;
 using WebSocketSharp;
 using WebSocketSharp.Net;
@@ -12,6 +14,68 @@ using static WebMap.WebMapConfig;
 
 namespace WebMap
 {
+    internal class PublicIdentityView
+    {
+        internal long Id;
+        internal string Alias;
+    }
+
+    internal static class PublicIdentity
+    {
+        private const ulong MaxSafeInteger = 9007199254740991UL;
+        private static readonly object Sync = new object();
+        private static readonly RandomNumberGenerator Random = RandomNumberGenerator.Create();
+        private static readonly Dictionary<string, PublicIdentityView> Identities = new Dictionary<string, PublicIdentityView>();
+        private static readonly HashSet<long> IssuedIds = new HashSet<long>();
+        private static int nextAliasNumber = 1;
+
+        internal static PublicIdentityView ForPeer(long rawId)
+        {
+            return Get("peer:" + rawId.ToString(CultureInfo.InvariantCulture));
+        }
+
+        internal static PublicIdentityView ForOwner(string rawId)
+        {
+            return Get("owner:" + (rawId ?? string.Empty));
+        }
+
+        private static PublicIdentityView Get(string identityKey)
+        {
+            lock (Sync)
+            {
+                if (Identities.TryGetValue(identityKey, out PublicIdentityView existing))
+                {
+                    return existing;
+                }
+
+                long publicId = NextOpaqueId();
+                int aliasNumber = nextAliasNumber++;
+                PublicIdentityView identity = new PublicIdentityView
+                {
+                    Id = publicId,
+                    Alias = $"Player {aliasNumber}"
+                };
+                Identities.Add(identityKey, identity);
+                IssuedIds.Add(publicId);
+                return identity;
+            }
+        }
+
+        private static long NextOpaqueId()
+        {
+            byte[] bytes = new byte[sizeof(long)];
+            long candidate;
+            do
+            {
+                Random.GetBytes(bytes);
+                candidate = (long)(BitConverter.ToUInt64(bytes, 0) & MaxSafeInteger);
+            }
+            while (candidate == 0 || IssuedIds.Contains(candidate));
+
+            return candidate;
+        }
+    }
+
     [Serializable]
     public struct MapMessage
     {
@@ -23,11 +87,12 @@ namespace WebMap
 
         public MapMessage(long id, int type, string name, string message)
         {
-            this.id = id;
+            PublicIdentityView identity = PublicIdentity.ForPeer(id);
+            this.id = identity.Id;
             this.type = type;
-            this.name = name;
+            this.name = name == "Server" ? "Server" : identity.Alias;
             this.message = message;
-            this.ts = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+            this.ts = DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture);
         }
 
         public string ToJson()
@@ -58,6 +123,7 @@ namespace WebMap
             {"jpg", "image/jpeg"},
             {"webp", "image/webp"}
         };
+        private static readonly string[] PublicPinTypes = { "dot", "fire", "mine", "house", "cave" };
 
         private readonly System.Threading.Timer broadcastTimer;
         private readonly Dictionary<string, byte[]> fileCache;
@@ -125,8 +191,6 @@ namespace WebMap
 
             httpServer.OnGet += (sender, e) =>
             {
-                HttpListenerRequest req = e.Request;
-
                 if (ProcessSpecialRoutes(e)) return;
 
                 ServeStaticFiles(e);
@@ -159,10 +223,11 @@ namespace WebMap
                     int dead = zdoData.GetBool("dead") ? 1 : 0;
                     int pvp = zdoData.GetBool("pvp") ? 1 : 0;
                     int inbed = zdoData.GetBool("inBed") ? 1 : 0;
+                    PublicIdentityView identity = PublicIdentity.ForPeer(player.m_uid);
 
                     maxHealth = Math.Max(maxHealth, health);
 
-                    dataString += $"{player.m_uid}\n{player.m_playerName}\n{health}\n{maxHealth}\n";
+                    dataString += $"{identity.Id}\n{identity.Alias}\n{health}\n{maxHealth}\n";
                     if (!player.m_publicRefPos)
                         dataString += "hidden\n";
                     if (player.m_publicRefPos || WebMapConfig.ALWAYS_VISIBLE || WebMapConfig.ALWAYS_MAP)
@@ -178,6 +243,7 @@ namespace WebMap
         {
             return __instance;
         }
+
         public void Stop()
         {
             broadcastTimer.Dispose();
@@ -289,7 +355,7 @@ namespace WebMap
                     res.Headers.Add(HttpResponseHeader.CacheControl, "no-cache");
                     res.ContentType = "text/csv";
                     res.StatusCode = 200;
-                    string text = string.Join("\n", pins);
+                    string text = SerializePublicPins();
                     textBytes = Encoding.UTF8.GetBytes(text);
                     res.ContentLength64 = textBytes.Length;
                     res.Close(textBytes, true);
@@ -316,32 +382,93 @@ namespace WebMap
 
         public void BroadcastPing(long id, string name, Vector3 position)
         {
-            webSocketHandler.Sessions.Broadcast($"ping\n{id}\n{name}\n{FixedValue(position.x)},{FixedValue(position.z)}");
+            PublicIdentityView identity = PublicIdentity.ForPeer(id);
+            webSocketHandler.Sessions.Broadcast($"ping\n{identity.Id}\n{identity.Alias}\n{FixedValue(position.x)},{FixedValue(position.z)}");
         }
 
         public void BroadcastMessage(long id, int type, string name, string message)
         {
-            webSocketHandler.Sessions.Broadcast($"message\n{id}\n{type}\n{name}\n{message}");
+            PublicIdentityView identity = PublicIdentity.ForPeer(id);
+            webSocketHandler.Sessions.Broadcast($"message\n{identity.Id}\n{type}\n{identity.Alias}\n{message}");
         }
 
         public void AddPin(string id, string pinId, string type, string name, Vector3 position, string pinText)
         {
-            pins.Add($"{id},{pinId},{type},{name},{FixedValue(position.x)},{FixedValue(position.z)},{pinText}");
-            webSocketHandler.Sessions.Broadcast(
-                $"pin\n{id}\n{pinId}\n{type}\n{name}\n{FixedValue(position.x)},{FixedValue(position.z)}\n{pinText}");
+            string privatePin = $"{id},{pinId},{type},{name},{FixedValue(position.x)},{FixedValue(position.z)},{pinText}";
+            pins.Add(privatePin);
+            if (TrySerializePublicPin(privatePin, out string publicCsv, out string publicSocket))
+            {
+                webSocketHandler.Sessions.Broadcast(publicSocket);
+            }
         }
 
         public void RemovePin(int idx)
         {
+            if (idx < 0 || idx >= pins.Count)
+            {
+                return;
+            }
+
             string pin = pins[idx];
-            string[] pinParts = pin.Split(',');
             pins.RemoveAt(idx);
-            webSocketHandler.Sessions.Broadcast($"rmpin\n{pinParts[1]}");
+            if (TrySerializePublicPin(pin, out string publicCsv, out string publicSocket))
+            {
+                string[] publicParts = publicCsv.Split(',');
+                webSocketHandler.Sessions.Broadcast($"rmpin\n{publicParts[1]}");
+            }
         }
 
         public void AddMessage(long id, int type, string name, string message)
         {
             newMessages.Add(new MapMessage(id, type, name, message));
+        }
+
+        private string SerializePublicPins()
+        {
+            List<string> publicPins = new List<string>();
+            pins.ForEach(pin =>
+            {
+                if (TrySerializePublicPin(pin, out string publicCsv, out string publicSocket))
+                {
+                    publicPins.Add(publicCsv);
+                }
+            });
+            return string.Join("\n", publicPins);
+        }
+
+        private static bool TrySerializePublicPin(string privatePin, out string publicCsv, out string publicSocket)
+        {
+            publicCsv = string.Empty;
+            publicSocket = string.Empty;
+            if (string.IsNullOrEmpty(privatePin))
+            {
+                return false;
+            }
+
+            string[] pinParts = privatePin.Split(',');
+            if (pinParts.Length != 7 || string.IsNullOrWhiteSpace(pinParts[0]) || string.IsNullOrWhiteSpace(pinParts[3]))
+            {
+                return false;
+            }
+            if (!Regex.IsMatch(pinParts[1], "^[0-9]+-[0-9]+$") ||
+                !Array.Exists(PublicPinTypes, pinType => pinType == pinParts[2]) ||
+                !Regex.IsMatch(pinParts[6], "^[a-zA-Z0-9 ]{0,20}$"))
+            {
+                return false;
+            }
+            if (!float.TryParse(pinParts[4], NumberStyles.Float, CultureInfo.InvariantCulture, out float x) ||
+                !float.TryParse(pinParts[5], NumberStyles.Float, CultureInfo.InvariantCulture, out float z) ||
+                float.IsNaN(x) || float.IsInfinity(x) || float.IsNaN(z) || float.IsInfinity(z))
+            {
+                return false;
+            }
+
+            PublicIdentityView identity = PublicIdentity.ForOwner(pinParts[0]);
+            string xValue = FixedValue(x);
+            string zValue = FixedValue(z);
+            publicCsv = $"{identity.Id},{pinParts[1]},{pinParts[2]},{identity.Alias},{xValue},{zValue},{pinParts[6]}";
+            publicSocket = $"pin\n{identity.Id}\n{pinParts[1]}\n{pinParts[2]}\n{identity.Alias}\n{xValue},{zValue}\n{pinParts[6]}";
+            return true;
         }
 
         private static string FixedValue(float f)
