@@ -4,7 +4,7 @@ import onPointers from "./onPointers";
 import { HYBRID_MAP_OPACITY, normalizeWorldVisibilityMode } from './visibility';
 
 const { canvas, map, mapBorder, mapBorderCircle } = ui;
-
+const MAX_MAP_ICONS = 5000;
 let width = constants.CANVAS_WIDTH;
 let height = constants.CANVAS_HEIGHT;
 let exploreRadius = constants.EXPLORE_RADIUS;
@@ -14,19 +14,14 @@ let visibilityMode = 'fogged';
 
 const mapIconImage = document.createElement('img');
 mapIconImage.src = 'mapIcons.png';
-
 const ctx = canvas.getContext('2d');
-
 let mapImage;
 let fogImage;
 const fogCanvas = document.createElement('canvas');
 const fogCanvasCtx = fogCanvas.getContext('2d');
-
 let currentZoom = 100;
-
 const mapIcons = [];
 const hiddenIcons = {};
-let followIcon;
 
 const createIconEl = (iconObj) => {
     const iconEl = document.createElement('div');
@@ -35,36 +30,20 @@ const createIconEl = (iconObj) => {
     if (iconObj.zIndex) iconEl.style.zIndex = iconObj.zIndex;
     const iconTextEl = document.createElement('div');
     iconTextEl.className = 'center text';
-    iconTextEl.textContent = iconObj.text;
+    iconTextEl.textContent = iconObj.text || '';
     iconEl.appendChild(iconTextEl);
     if (iconObj.node) iconEl.appendChild(iconObj.node);
     return iconEl;
 };
 
-const centerOnIcon = (iconObj) => {
-    const rect = iconObj.el.getBoundingClientRect();
-    const deltaX = window.innerWidth / 2 - rect.left;
-    const deltaY = window.innerHeight / 2 - rect.top;
-    if (Math.abs(deltaX) > 0.5 || Math.abs(deltaY) > 0.5) {
-        map.style.left = deltaX + map.offsetLeft + 'px';
-        map.style.top = deltaY + map.offsetTop + 'px';
-    }
-};
-
-const setFollowIcon = (iconObj) => {
-    followIcon = iconObj;
-    if (followIcon) centerOnIcon(followIcon);
-};
-
-let pendingIconUpdate = false;
+let iconUpdateTimer;
 const updateIcons = () => {
-    clearTimeout(performUpdateIcons);
-    pendingIconUpdate = true;
-    setTimeout(performUpdateIcons, 250);
+    clearTimeout(iconUpdateTimer);
+    iconUpdateTimer = setTimeout(performUpdateIcons, 250);
 };
 
 const performUpdateIcons = () => {
-    pendingIconUpdate = false;
+    iconUpdateTimer = undefined;
     mapIcons.forEach(iconObj => {
         let firstRender = false;
         if (!iconObj.el) {
@@ -72,7 +51,7 @@ const performUpdateIcons = () => {
             iconObj.el = createIconEl(iconObj);
             map.appendChild(iconObj.el);
         }
-        const isIconTypeHidden = (iconObj.type in hiddenIcons && hiddenIcons[iconObj.type]);
+        const isIconTypeHidden = iconObj.type in hiddenIcons && hiddenIcons[iconObj.type];
         iconObj.el.style.display = (isIconTypeHidden || iconObj.hidden) ? 'none' : 'block';
         if (iconObj.flags) {
             Object.keys(iconObj.flags).forEach(key => {
@@ -86,20 +65,22 @@ const performUpdateIcons = () => {
         iconObj.el.style.left = 100 * imgX / width + '%';
         iconObj.el.style.top = 100 * imgY / height + '%';
     });
-    if (followIcon) centerOnIcon(followIcon);
 };
 
 window.addEventListener('mousemove', e => {
+    if (map.offsetWidth <= 0) return;
     const canvasOffsetScale = map.offsetWidth / width;
     const x = pixelSize * (-coordOffset + (e.clientX - map.offsetLeft) / canvasOffsetScale);
     const y = pixelSize * (height - coordOffset + (map.offsetTop - e.clientY) / canvasOffsetScale);
-    ui.coords.textContent = `${x.toFixed(2)} , ${y.toFixed(2)}`;
+    if (Number.isFinite(x) && Number.isFinite(y)) ui.coords.textContent = `${x.toFixed(2)} , ${y.toFixed(2)}`;
 });
 
 const addIcon = (iconObj, update = true) => {
-    if (!iconObj.id) iconObj.id = `id_${Date.now()}_${Math.random()}`;
+    if (!iconObj || typeof iconObj.id !== 'string' || !iconObj.id || mapIcons.length >= MAX_MAP_ICONS) return false;
+    if (!Number.isFinite(iconObj.x) || !Number.isFinite(iconObj.z)) return false;
     mapIcons.push(iconObj);
     if (update) updateIcons();
+    return true;
 };
 
 const hideIcon = (iconObj) => {
@@ -141,9 +122,6 @@ const redrawMap = () => {
     ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
     ctx.drawImage(mapImage, 0, 0);
-
-    // fogged preserves legacy rendering; hybrid keeps its fog while showing a
-    // deliberately faint generated-map layer; full does not draw fog at all.
     if (visibilityMode !== 'full') {
         ctx.globalCompositeOperation = 'multiply';
         ctx.drawImage(fogCanvas, 0, 0);
@@ -159,6 +137,7 @@ const redrawMap = () => {
 };
 
 const explore = (mapX, mapZ) => {
+    if (!Number.isFinite(mapX) || !Number.isFinite(mapZ)) return;
     const radius = exploreRadius / pixelSize;
     const x = mapX / pixelSize + coordOffset;
     const y = height - (mapZ / pixelSize + coordOffset);
@@ -169,14 +148,14 @@ const explore = (mapX, mapZ) => {
 };
 
 const setZoom = function (zoomP, zoomTowardsX, zoomTowardsY) {
+    if (!Number.isFinite(zoomP)) return;
     if (zoomTowardsX === undefined) {
         zoomTowardsX = window.innerWidth / 2;
         zoomTowardsY = window.innerHeight / 2;
     }
     const oldZoom = currentZoom;
-    const minZoom = 50;
-    const maxZoom = 8000 * devicePixelRatio;
-    zoomP = Math.min(Math.max(Math.round(zoomP), minZoom), maxZoom);
+    const density = Number.isFinite(devicePixelRatio) ? Math.min(4, Math.max(1, devicePixelRatio)) : 1;
+    zoomP = Math.min(Math.max(Math.round(zoomP), 50), 8000 * density);
     currentZoom = zoomP;
     map.style.width = `${zoomP}%`;
     map.style.height = map.offsetWidth + 'px';
@@ -216,17 +195,17 @@ const init = (options) => {
     fogImage = options.fogImage;
     fogCanvasCtx.drawImage(fogImage, 0, 0);
     redrawMap();
+    if (options.zoom) setZoom(options.zoom);
 
     const zoomChange = (e, mult = 1) => {
-        map.classList.add('zooming');
-        const oldZoom = currentZoom;
-        const zoomAmount = Math.max(Math.floor(oldZoom / 5), 1) * mult;
         const scrollAmt = e.deltaY === 0 ? e.deltaX : e.deltaY;
-        if (scrollAmt > 0) setZoom(oldZoom - zoomAmount, e.clientX, e.clientY);
-        else setZoom(oldZoom + zoomAmount, e.clientX, e.clientY);
+        if (!Number.isFinite(scrollAmt)) return;
+        map.classList.add('zooming');
+        const zoomAmount = Math.max(Math.floor(currentZoom / 5), 1) * mult;
+        if (scrollAmt > 0) setZoom(currentZoom - zoomAmount, e.clientX, e.clientY);
+        else setZoom(currentZoom + zoomAmount, e.clientX, e.clientY);
         removeZoomingClass();
     };
-    if (options.zoom) setZoom(options.zoom);
     window.addEventListener('wheel', zoomChange);
     window.addEventListener('resize', () => { map.style.height = map.offsetWidth + 'px'; });
 
@@ -244,7 +223,7 @@ const init = (options) => {
             }
         },
         move: (pointers) => {
-            if (pointers.length === 1 && !isZooming && !followIcon) {
+            if (pointers.length === 1 && !isZooming) {
                 const e = pointers[0].event;
                 map.style.left = canvasPreDragPos.x + (e.clientX - pointers[0].downEvent.clientX) + 'px';
                 map.style.top = canvasPreDragPos.y + (e.clientY - pointers[0].downEvent.clientY) + 'px';
@@ -270,6 +249,6 @@ const init = (options) => {
 
 export default {
     init, addIcon, removeIcon, removeIconById, hideIcon, hideIconById,
-    showIcon, showIconById, setIconTypeHidden, explore, centerOnIcon,
-    setFollowIcon, update: redrawMap, updateIcons, canvas
+    showIcon, showIconById, setIconTypeHidden, explore, update: redrawMap,
+    updateIcons, canvas
 };
