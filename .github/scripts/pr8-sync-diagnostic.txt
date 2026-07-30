@@ -1,0 +1,12 @@
+exit=1
+command=python /tmp/pr8-sync.py
+status:
+M  .github/workflows/tests.yml
+M  WebMap/DiscordWebHook.cs
+UU WebMap/MapDataServer.cs
+M  WebMap/WebMap.cs
+M  WebMap/web-src/players.js
+M  WebMap/web-src/websocket.js
+A  tests/test_public_identity_webhook_privacy.py
+unmerged:
+WebMap/MapDataServer.cs
