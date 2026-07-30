@@ -2,6 +2,7 @@
 from pathlib import Path
 import shutil
 import subprocess
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 OPAQUE_WEBSOCKET = ROOT / "libs" / "websocket-sharp.dll"
@@ -83,11 +84,12 @@ def test_required_notice_records_the_source_build_and_complete_mit_license():
     assert "built from" in notice.lower()
 
 
-def test_release_packager_accepts_only_the_current_source_built_dependency(tmp_path):
+def test_release_packager_creates_only_the_installable_archive_from_current_source_build(tmp_path):
     script = ROOT / "scripts" / "package-release.js"
-    output = tmp_path / "package"
+    output = tmp_path / "compiler-staging"
     web = tmp_path / "web"
     source = tmp_path / "source-build" / "websocket-sharp.dll"
+    dist = tmp_path / "dist"
     output.mkdir()
     web.mkdir()
     source.parent.mkdir()
@@ -98,20 +100,45 @@ def test_release_packager_accepts_only_the_current_source_built_dependency(tmp_p
     (output / "private.cfg").write_text("private", encoding="utf-8")
     (output / "nested").mkdir()
     (output / "nested" / "secret.data").write_text("private", encoding="utf-8")
-    (web / "main.0123456789abcdef.js").write_text("console.log('bundle')", encoding="utf-8")
+    bundle = "main.0123456789abcdef.js"
+    (web / bundle).write_text("console.log('bundle')", encoding="utf-8")
+    (web / "index.html").write_text(
+        f'<link href="style.css" rel="stylesheet"><script src="{bundle}"></script>',
+        encoding="utf-8",
+    )
+    (web / "style.css").write_text(
+        "body{background:url('tile.webp')}.mapIcon{background:url('mapIcons.png')}",
+        encoding="utf-8",
+    )
+    (web / "mapIcons.png").write_bytes(b"icons")
+    (web / "tile.webp").write_bytes(b"tile")
+    (web / "drawdown.js").write_text("not referenced", encoding="utf-8")
 
     subprocess.run(
-        ["node", str(script), str(output), str(web), str(ROOT / NOTICE_NAME), str(source)],
+        ["node", str(script), str(output), str(web), str(ROOT / NOTICE_NAME), str(source), str(dist)],
         cwd=ROOT, check=True, capture_output=True, text=True,
     )
 
-    files = sorted(path.name for path in output.iterdir())
-    assert files == [NOTICE_NAME, "WebMap.dll", "main.0123456789abcdef.js", "websocket-sharp.dll"]
-    assert (output / "websocket-sharp.dll").read_bytes() == source.read_bytes()
+    archive_path = dist / "valheim-webmap-2.7.4.zip"
+    assert archive_path.is_file()
+    with zipfile.ZipFile(archive_path) as archive:
+        assert sorted(archive.namelist()) == sorted([
+            "WebMap/WebMap.dll",
+            "WebMap/websocket-sharp.dll",
+            f"WebMap/web/{bundle}",
+            "WebMap/web/index.html",
+            "WebMap/web/style.css",
+            "WebMap/web/mapIcons.png",
+            "WebMap/web/tile.webp",
+            f"WebMap/{NOTICE_NAME}",
+        ])
+        assert archive.read("WebMap/websocket-sharp.dll") == source.read_bytes()
+        assert "drawdown.js" not in archive.namelist()
+    assert (output / "WebMap.pdb").is_file(), "compiler staging remains separate from the archive"
 
     (output / "websocket-sharp.dll").write_bytes(b"fallback prebuilt binary")
     rejected = subprocess.run(
-        ["node", str(script), str(output), str(web), str(ROOT / NOTICE_NAME), str(source)],
+        ["node", str(script), str(output), str(web), str(ROOT / NOTICE_NAME), str(source), str(dist)],
         cwd=ROOT, capture_output=True, text=True,
     )
     assert rejected.returncode != 0

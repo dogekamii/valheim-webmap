@@ -46,7 +46,7 @@ jobs:
         run: |
           test -s dist/valheim-webmap-2.7.4.zip
           python3 scripts/inspect-release-archive.py dist/valheim-webmap-2.7.4.zip --compiler-output WebMap/bin/Release/net48
-      - name: Reject compile-only DLLs from compiler staging output
+      - name: Reject compile-only DLLs from release output (compiler staging output)
         run: |
           unexpected="$(find WebMap/bin/Release/net48 -maxdepth 1 -type f -name '*.dll' ! -name 'WebMap.dll' ! -name 'websocket-sharp.dll' -print -quit)"
           test -z "$unexpected"

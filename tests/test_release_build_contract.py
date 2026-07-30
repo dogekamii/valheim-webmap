@@ -87,5 +87,6 @@ def test_release_contract_inspects_the_installable_archive_not_compiler_staging(
     assert "Inspect canonical release archive" in workflow
     assert "python3 scripts/inspect-release-archive.py" in workflow
     assert "test -s dist/valheim-webmap-2.7.4.zip" in workflow
-    assert "Reject compile-only DLLs from compiler staging output" in workflow
+    assert "Reject compile-only DLLs from release output" in workflow
+    assert "compiler staging output" in workflow
     assert "ref: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow
