@@ -10,7 +10,7 @@ webmap_path = Path("WebMap/WebMap.cs")
 webmap = webmap_path.read_text(encoding="utf-8-sig")
 old_version = 'public const string VERSION = "2.7.3";'
 new_version = 'public const string VERSION = "2.7.4";'
-assert webmap.count(old_version) == 1
+assert webmap.count(old_version) + webmap.count(new_version) == 1
 webmap_path.write_text(webmap.replace(old_version, new_version), encoding="utf-8")
 
 phase("mapdata-class-marker")
