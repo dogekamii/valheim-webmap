@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 2.7.4 — 2026-07-30
+
+### Security
+
+- Restrict chat-rendered image sources to same-origin relative paths while preserving safe clickable links.
+- Apply MIME sniffing, referrer, frame, and same-origin Content Security Policy headers to every HTTP response path.
+- Set quorum journals to `0640` after opening and before writing, preserving fail-closed writes while granting the designated AMP group read access.
+- Pin GitHub Actions to reviewed commits, use read-only workflow permissions, and avoid duplicate feature-branch push runs.
+
+### Fixed
+
+- Minimize new quorum join/leave records, remove visitor endpoint logging, correct the `/messages` media type, and bind the test setting independently from debug.
+- Keep only `WebMap.dll` and `websocket-sharp.dll` in the release payload and refresh audited npm dependencies.
+
 ## 2.7.3 — 2026-07-28
 
 ### Added

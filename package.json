@@ -1,6 +1,6 @@
 {
   "name": "webmap",
-  "version": "2.7.3",
+  "version": "2.7.4",
   "description": "Current-Valheim-compatible browser map for Valheim dedicated servers",
   "scripts": {
     "build-dev": "node scripts/build-web.js development",
