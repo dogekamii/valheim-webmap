@@ -220,7 +220,11 @@ namespace WebMap
                 publicationCoroutine = null;
                 if (ReferenceEquals(__instance, this)) __instance = null;
             }
-            if (coroutine != null && owner != null) owner.StopCoroutine(coroutine);
+            try
+            {
+                if (coroutine != null && owner != null) owner.StopCoroutine(coroutine);
+            }
+            catch { ZLog.LogWarning("WebMap: publication coroutine shutdown failed"); }
             try
             {
                 foreach (string id in new List<string>(webSocketHandler.Sessions.IDs)) webSocketHandler.Sessions.CloseSession(id);
