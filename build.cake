@@ -15,6 +15,14 @@ var websocketBuildPath = System.IO.Path.Combine(tempDir, "websocket-sharp-build"
 var websocketAssemblyPath = System.IO.Path.Combine(websocketBuildPath, "websocket-sharp.dll");
 var websocketCommit = "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1";
 
+int RunCheckedBuildCommand(string stepName, string command)
+{
+    return StartProcess("/bin/bash", new ProcessSettings
+    {
+        Arguments = $"scripts/run-build-step.sh \"{stepName}\" {command}"
+    });
+}
+
 var publicizerInputPath = "./libs/valheim/";
 var publicizerOutputPath = publicizerInputPath;
 
@@ -87,10 +95,10 @@ Task("BuildWebsocketSharp")
 
     EnsureDirectoryExists(websocketBuildPath);
     CleanDirectory(websocketBuildPath);
-    var sourceBuildExitCode = StartProcess("xbuild", new ProcessSettings
-    {
-        Arguments = $"\"{websocketSourceProject}\" /target:Rebuild /property:Configuration=Release /property:OutputPath=\"{websocketBuildPath}/\" /verbosity:minimal"
-    });
+    var sourceBuildExitCode = RunCheckedBuildCommand(
+        "websocket source xbuild",
+        $"xbuild \"{websocketSourceProject}\" /target:Rebuild /property:Configuration=Release /property:OutputPath=\"{websocketBuildPath}/\" /verbosity:minimal"
+    );
     if (sourceBuildExitCode != 0 || !System.IO.File.Exists(websocketAssemblyPath) || new System.IO.FileInfo(websocketAssemblyPath).Length == 0)
     {
         throw new Exception("Canonical websocket-sharp source build failed.");
@@ -101,26 +109,30 @@ Task("BuildWebsocketSharp")
 var BuildTask = Task("Build")
     .Does(() =>
 {
-    DotNetBuild("./WebMap/WebMap.csproj", new DotNetBuildSettings
+    var webMapBuildExitCode = RunCheckedBuildCommand(
+        "WebMap dotnet build",
+        $"dotnet build \"./WebMap/WebMap.csproj\" --configuration \"{configuration}\""
+    );
+    if (webMapBuildExitCode != 0)
     {
-        Configuration = configuration,
-    });
+        throw new Exception("WebMap managed build failed.");
+    }
 
     if (configuration == "Release")
     {
-        var packageExitCode = StartProcess("node", new ProcessSettings
-        {
-            Arguments = $"scripts/package-release.js WebMap/bin/Release/net48 WebMap/web THIRD-PARTY-NOTICES.txt \"{websocketAssemblyPath}\""
-        });
+        var packageExitCode = RunCheckedBuildCommand(
+            "release packager",
+            $"node scripts/package-release.js WebMap/bin/Release/net48 WebMap/web THIRD-PARTY-NOTICES.txt \"{websocketAssemblyPath}\""
+        );
         if (packageExitCode != 0)
         {
             throw new Exception("Canonical four-file release packaging failed.");
         }
 
-        var inspectionExitCode = StartProcess("/bin/bash", new ProcessSettings
-        {
-            Arguments = "scripts/inspect-release-privacy.sh"
-        });
+        var inspectionExitCode = RunCheckedBuildCommand(
+            "release privacy inspector",
+            "bash scripts/inspect-release-privacy.sh"
+        );
         if (inspectionExitCode != 0)
         {
             throw new Exception("Release privacy inspection failed.");

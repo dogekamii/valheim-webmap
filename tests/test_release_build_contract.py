@@ -14,7 +14,7 @@ def test_canonical_release_runs_browser_dependency_and_webmap_builds_in_order():
     assert 'Task("BuildWebsocketSharp")' in build_cake
     assert "xbuild" in build_cake
     assert "websocket-sharp/websocket-sharp.csproj" in build_cake
-    assert build_cake.index('Task("BuildWebsocketSharp")') < build_cake.index('DotNetBuild("./WebMap/WebMap.csproj"')
+    assert build_cake.index('Task("BuildWebsocketSharp")') < build_cake.index('dotnet build \\"./WebMap/WebMap.csproj\\"')
     assert 'NpmRunScript("build")' in build_cake
     assert "scripts/package-release.js" in build_cake
     assert "scripts/inspect-release-privacy.sh" in build_cake
@@ -22,6 +22,24 @@ def test_canonical_release_runs_browser_dependency_and_webmap_builds_in_order():
     assert "docker build --build-arg BEPINEX_RELEASE=" in workflow
     assert "webmap-release-build" in workflow
     assert "./build.sh --configuration Release" in workflow
+
+
+def test_failed_managed_build_steps_emit_sanitized_reusable_annotations():
+    build_cake = (repo / "build.cake").read_text()
+    diagnostic = (repo / "scripts" / "run-build-step.sh").read_text()
+    for step in (
+        "websocket source xbuild",
+        "WebMap dotnet build",
+        "release packager",
+        "release privacy inspector",
+    ):
+        assert step in build_cake
+    assert build_cake.count("RunCheckedBuildCommand(") >= 5
+    assert '"$@" 2>&1 | tee "$log_file"' in diagnostic
+    assert "PIPESTATUS[0]" in diagnostic
+    assert "::error title=${step_name} failed::" in diagnostic
+    assert "cut -c1-400" in diagnostic
+    assert "<path>" in diagnostic
 
 
 def test_webmap_compiles_against_only_the_current_source_build_output():
