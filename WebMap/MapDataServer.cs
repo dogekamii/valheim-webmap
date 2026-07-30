@@ -40,10 +40,7 @@ namespace WebMap
             lock (Sync)
             {
                 PublicIdentityValue existing;
-                if (Identities.TryGetValue(owner, out existing))
-                {
-                    return existing;
-                }
+                if (Identities.TryGetValue(owner, out existing)) return existing;
 
                 long id;
                 byte[] bytes = new byte[8];
@@ -73,14 +70,12 @@ namespace WebMap
                 Close(CloseStatusCode.PolicyViolation, "invalid request");
                 return;
             }
-
             MapDataServer server = MapDataServer.getInstance();
             if (server == null)
             {
                 Close(CloseStatusCode.Away, "unavailable");
                 return;
             }
-
             playersSent = true;
             Send(server.GetPlayerSnapshot());
         }
@@ -131,7 +126,6 @@ namespace WebMap
             this.owner = owner;
             __instance = this;
             publicRoot = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty, "web");
-
             httpServer = new HttpServer(SERVER_PORT);
             httpServer.AddWebSocketService<WebSocketHandler>("/");
             httpServer.KeepClean = true;
@@ -139,12 +133,8 @@ namespace WebMap
             httpServer.OnGet += (sender, e) =>
             {
                 ApplySecurityHeaders(e.Response);
-                if (!ProcessSpecialRoutes(e))
-                {
-                    ServeStaticFiles(e);
-                }
+                if (!ProcessSpecialRoutes(e)) ServeStaticFiles(e);
             };
-
             publicationCoroutine = owner.StartCoroutine(PublishSnapshotsOnMainThread());
         }
 
@@ -175,74 +165,39 @@ namespace WebMap
                 playerSnapshot = BuildPlayerSnapshot();
                 configSnapshot = Encoding.UTF8.GetBytes(MakeClientConfigJson());
                 PublishPinSnapshot();
-                if (fogTexture != null)
-                {
-                    fogSnapshot = WebMap.EncodeTextureToPng(fogTexture);
-                }
-
+                if (fogTexture != null) fogSnapshot = WebMap.EncodeTextureToPng(fogTexture);
                 if (forceReload)
                 {
                     forceReload = false;
                     webSocketHandler.Sessions.Broadcast("reload");
                 }
-
                 yield return new WaitForSeconds(Mathf.Max(0.1f, PLAYER_UPDATE_INTERVAL));
             }
         }
 
-        public static MapDataServer getInstance()
-        {
-            return __instance;
-        }
-
-        public string GetPlayerSnapshot()
-        {
-            return playerSnapshot;
-        }
+        public static MapDataServer getInstance() => __instance;
+        public string GetPlayerSnapshot() => playerSnapshot;
 
         public void Stop()
         {
             Coroutine coroutine;
             lock (lifecycleSync)
             {
-                if (stopping)
-                {
-                    return;
-                }
+                if (stopping) return;
                 stopping = true;
                 coroutine = publicationCoroutine;
                 publicationCoroutine = null;
-                if (ReferenceEquals(__instance, this))
-                {
-                    __instance = null;
-                }
+                if (ReferenceEquals(__instance, this)) __instance = null;
             }
-
-            if (coroutine != null && owner != null)
-            {
-                owner.StopCoroutine(coroutine);
-            }
-
+            if (coroutine != null && owner != null) owner.StopCoroutine(coroutine);
             try
             {
                 foreach (string id in new List<string>(webSocketHandler.Sessions.IDs))
-                {
                     webSocketHandler.Sessions.CloseSession(id);
-                }
             }
-            catch
-            {
-                ZLog.LogWarning("WebMap: websocket shutdown failed");
-            }
-
-            try
-            {
-                httpServer.Stop();
-            }
-            catch
-            {
-                ZLog.LogWarning("WebMap: HTTP shutdown failed");
-            }
+            catch { ZLog.LogWarning("WebMap: websocket shutdown failed"); }
+            try { httpServer.Stop(); }
+            catch { ZLog.LogWarning("WebMap: HTTP shutdown failed"); }
         }
 
         private void ServeStaticFiles(HttpRequestEventArgs e)
@@ -253,7 +208,6 @@ namespace WebMap
             if (requestPath == "/") requestPath = "/index.html";
             string requestedFile = Path.GetFileName(requestPath);
             string fileExt = Path.GetExtension(requestedFile).TrimStart('.');
-
             if (!contentTypes.ContainsKey(fileExt))
             {
                 SetNoStore(res);
@@ -261,13 +215,8 @@ namespace WebMap
                 res.Close();
                 return;
             }
-
             byte[] requestedFileBytes = null;
-            lock (fileCacheSync)
-            {
-                fileCache.TryGetValue(requestedFile, out requestedFileBytes);
-            }
-
+            lock (fileCacheSync) fileCache.TryGetValue(requestedFile, out requestedFileBytes);
             if (requestedFileBytes == null)
             {
                 try
@@ -281,7 +230,6 @@ namespace WebMap
                     requestedFileBytes = new byte[0];
                 }
             }
-
             if (requestedFileBytes.Length == 0)
             {
                 SetNoStore(res);
@@ -289,7 +237,6 @@ namespace WebMap
                 res.Close();
                 return;
             }
-
             res.Headers.Add(HttpResponseHeader.CacheControl, "public, max-age=604800, immutable");
             res.ContentType = contentTypes[fileExt];
             res.StatusCode = 200;
@@ -312,7 +259,6 @@ namespace WebMap
             HttpListenerResponse res = e.Response;
             string requestPath = req.Url.AbsolutePath;
             byte[] bytes;
-
             switch (requestPath)
             {
                 case "/config":
@@ -338,7 +284,6 @@ namespace WebMap
                 default:
                     return false;
             }
-
             if (bytes == null || bytes.Length == 0)
             {
                 SetNoStore(res);
@@ -346,31 +291,22 @@ namespace WebMap
                 res.Close();
                 return true;
             }
-
             res.StatusCode = 200;
             res.ContentLength64 = bytes.Length;
             res.Close(bytes, true);
             return true;
         }
 
-        public void Reload()
-        {
-            forceReload = true;
-        }
+        public void Reload() => forceReload = true;
 
         public void ListenAsync()
         {
             httpServer.Start();
-            if (httpServer.IsListening)
-                ZLog.Log("WebMap: HTTP server started");
-            else
-                ZLog.LogError("WebMap: HTTP server failed");
+            if (httpServer.IsListening) ZLog.Log("WebMap: HTTP server started");
+            else ZLog.LogError("WebMap: HTTP server failed");
         }
 
-        public void PublishMap(byte[] bytes)
-        {
-            mapSnapshot = bytes ?? new byte[0];
-        }
+        public void PublishMap(byte[] bytes) => mapSnapshot = bytes ?? new byte[0];
 
         public void ReplacePins(IEnumerable<string> pins)
         {
@@ -391,10 +327,7 @@ namespace WebMap
 
         public string[] GetPrivatePinsSnapshot()
         {
-            lock (pinSync)
-            {
-                return privatePins.ToArray();
-            }
+            lock (pinSync) return privatePins.ToArray();
         }
 
         public int CountPinsForOwner(string owner)
@@ -443,12 +376,8 @@ namespace WebMap
             string record = $"{owner},{pinId},{type},,{FixedValue(position.x)},{FixedValue(position.z)},{pinText ?? string.Empty}";
             string[] parsed;
             if (!TryParsePrivatePin(record, out parsed)) return;
-            lock (pinSync)
-            {
-                privatePins.Add(record);
-            }
+            lock (pinSync) privatePins.Add(record);
             PublishPinSnapshot();
-
             string publicPin;
             if (TrySerializePublicPin(record, out publicPin))
             {
@@ -474,11 +403,7 @@ namespace WebMap
         private void PublishPinSnapshot()
         {
             string[] source;
-            lock (pinSync)
-            {
-                source = privatePins.ToArray();
-            }
-
+            lock (pinSync) source = privatePins.ToArray();
             List<string> serialized = new List<string>();
             foreach (string pin in source)
             {
@@ -497,9 +422,7 @@ namespace WebMap
         {
             if (value == null || value.Length > maxLength || (!allowEmpty && value.Length == 0)) return false;
             for (int i = 0; i < value.Length; i++)
-            {
                 if (value[i] == ',' || char.IsControl(value[i])) return false;
-            }
             return true;
         }
 
@@ -518,15 +441,8 @@ namespace WebMap
             return true;
         }
 
-        private static bool IsSafeLegacyName(string value)
-        {
-            return IsSafeRecordField(value, MaxLegacyNameLength, true);
-        }
-
-        private static bool IsSafePublicPinText(string value)
-        {
-            return IsSafeRecordField(value, MaxPublicPinTextLength, true);
-        }
+        private static bool IsSafeLegacyName(string value) => IsSafeRecordField(value, MaxLegacyNameLength, true);
+        private static bool IsSafePublicPinText(string value) => IsSafeRecordField(value, MaxPublicPinTextLength, true);
 
         private static bool TryParseCoordinate(string value, out float coordinate)
         {
@@ -576,7 +492,7 @@ namespace WebMap
         {
             serialized = null;
             string[] pinParts;
-            if (!TryParsePrivatePin(record, out pinParts)) return false;
+            if (!TryParsePrivatePin(record, out pinParts) || pinParts.Length != 7) return false;
             PublicIdentityValue identity = PublicIdentity.ForOwner(pinParts[0]);
             serialized = string.Join(",", new[] {
                 identity.Id.ToString(CultureInfo.InvariantCulture), pinParts[1], pinParts[2], identity.Alias,
@@ -585,9 +501,6 @@ namespace WebMap
             return true;
         }
 
-        private static string FixedValue(float value)
-        {
-            return value.ToString("F2", CultureInfo.InvariantCulture);
-        }
+        private static string FixedValue(float value) => value.ToString("F2", CultureInfo.InvariantCulture);
     }
 }
