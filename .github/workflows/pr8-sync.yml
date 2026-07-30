@@ -22,6 +22,28 @@ jobs:
           TEMP_BRANCH: automation/pr8-sync-00700a0
         run: |
           set -euo pipefail
+          diagnose() {
+            rc=$?
+            trap - ERR
+            failed_command="$BASH_COMMAND"
+            {
+              echo "exit=$rc"
+              echo "command=$failed_command"
+              echo "status:"
+              git status --short || true
+              echo "unmerged:"
+              git diff --name-only --diff-filter=U || true
+            } > /tmp/pr8-sync-diagnostic.txt
+            git merge --abort || true
+            git checkout -B "$TEMP_BRANCH" "origin/$TEMP_BRANCH"
+            mkdir -p .github/scripts
+            cp /tmp/pr8-sync-diagnostic.txt .github/scripts/pr8-sync-diagnostic.txt
+            git add .github/scripts/pr8-sync-diagnostic.txt
+            git commit -m "ci: record PR 8 sync failure [skip ci]"
+            git push origin "$TEMP_BRANCH"
+            exit "$rc"
+          }
+          trap diagnose ERR
           cp .github/scripts/pr8-sync.py /tmp/pr8-sync.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
