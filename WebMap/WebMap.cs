@@ -17,7 +17,7 @@ namespace WebMap
 {
     //This attribute is required, and lists metadata for your plugin.
     //The GUID should be a unique ID for this plugin, which is human readable (as it is used in places like the config). I like to use the java package notation, which is "com.[your name here].[your plugin name here]"
-    //The name is the name of the plugin that's displayed on load, and the version number just specifies what version the plugin is.
+    //The name is the name of the plugin that's displayed on load, and the version number just specifies what version of the plugin this is.
     [BepInPlugin(GUID, NAME, VERSION)]
 
     //This is the main declaration of our plugin class. BepInEx searches for all classes inheriting from BaseUnityPlugin to initialize on startup.
@@ -125,36 +125,52 @@ namespace WebMap
             serverInfo.Add("openServer", openServer);
             serverInfo.Add("publicServer", publicServer);
             serverInfo.Add("serverName", serverName);
-            serverInfo.Add("password", password);
             serverInfo.Add("worldName", worldName);
             serverInfo.Add("worldSeed", worldSeed);
         }
 
+        private void SendDiscordNotification(Func<string> createMessage)
+        {
+            if (!discordWebHook.IsEnabled)
+            {
+                return;
+            }
+
+            try
+            {
+                discordWebHook.SendMessage(createMessage());
+            }
+            catch
+            {
+                ZLog.LogWarning("WebMap: Discord webhook notification failed");
+            }
+        }
+
         public void NotifyOnline()
         {
-            discordWebHook.SendMessage($"🎮 **{serverInfo["serverName"]}** is *online* 🟢\n💻 {AccessTools.Method(typeof(ZNet), "GetServerIP").Invoke(ZNet.instance, new object[] { })}:{ZNet.instance.m_hostPort}\n🔑 {serverInfo["password"]}\n🗺 {WebMapConfig.URL}");
+            SendDiscordNotification(() => $"🎮 **{serverInfo["serverName"]}** is *online* 🟢\n🗺 {WebMapConfig.URL}");
         }
 
         public void NotifyOffline()
         {
-            discordWebHook.SendMessage($"🎮 **{serverInfo["serverName"]}** is *offline* 🔴");
+            SendDiscordNotification(() => $"🎮 **{serverInfo["serverName"]}** is *offline* 🔴");
         }
 
         public void NotifyJoin(ZNetPeer peer)
         {
-            string message = $"player _{peer.m_playerName}_ joined";
-            discordWebHook.SendMessage($"🎮 **{serverInfo["serverName"]}** {message}");
             QuorumActivityJournal.AppendJoin(peer);
+            const string message = "A player joined";
             mapDataServer.AddMessage(peer.m_uid, (int)Talker.Type.Normal, "Server", message);
+            SendDiscordNotification(() => $"🎮 **{serverInfo["serverName"]}** {message}");
         }
 
         public void NotifyLeave(ZNetPeer peer)
         {
-            string message = $"player _{peer.m_playerName}_ left";
-            discordWebHook.SendMessage($"🎮 **{serverInfo["serverName"]}** {message}");
             QuorumActivityJournal.AppendLeave(peer);
+            const string message = "A player left";
             MessageHud.instance.MessageAll(MessageHud.MessageType.Center, message);
             mapDataServer.AddMessage(peer.m_uid, (int)Talker.Type.Normal, "Server", message);
+            SendDiscordNotification(() => $"🎮 **{serverInfo["serverName"]}** {message}");
         }
 
         public void NewWorld()
@@ -618,7 +634,7 @@ namespace WebMap
 
                 if (WebMapConfig.DEBUG)
                 {
-                    ZLog.Log("HandleRoutedRPC: " + methodName);
+                    ZLog.Log("WebMap: routed RPC received");
                 }
 
                 ZNetPeer peer = ZNet.instance.GetPeer(data.m_senderPeerID);
@@ -714,12 +730,12 @@ namespace WebMap
                             {
                                 mapDataServer.AddMessage(data.m_senderPeerID, messageType, userInfo.Name, message);
                             }
-                            ZLog.Log($"WebMap: (say) {pos} | {messageType} | {userInfo.Name} | {message}");
+                            if (WebMapConfig.DEBUG) ZLog.Log("WebMap: chat message processed");
                         }
                     }
-                    catch (Exception ex)
+                    catch
                     {
-                        if (WebMapConfig.DEBUG) ZLog.LogError(ex.ToString());
+                        if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: chat message processing failed");
                     }
                 }
                 else if (data?.m_methodHash == chatMessageMethodHash || data?.m_methodHash == "ChatMessage".GetStableHashCode())
@@ -736,7 +752,7 @@ namespace WebMap
                         if (messageType == (int)Talker.Type.Ping)
                         {
                             mapDataServer.BroadcastPing(data.m_senderPeerID, userInfo.Name, pos);
-                            ZLog.Log($"WebMap: (ping) {pos} | {messageType} | {userInfo.Name}");
+                            if (WebMapConfig.DEBUG) ZLog.Log("WebMap: ping processed");
                         }
                         else
                         {
@@ -744,12 +760,12 @@ namespace WebMap
                             message = message.Trim();
 
                             mapDataServer.AddMessage(data.m_senderPeerID, messageType, userInfo.Name, message);
-                            ZLog.Log($"WebMap: (chat) {pos} | {messageType} | {userInfo.Name} | {message}");
+                            if (WebMapConfig.DEBUG) ZLog.Log("WebMap: chat message processed");
                         }
                     }
-                    catch (Exception ex)
+                    catch
                     {
-                        if (WebMapConfig.DEBUG) ZLog.LogError(ex.ToString());
+                        if (WebMapConfig.DEBUG) ZLog.LogWarning("WebMap: chat message processing failed");
                     }
                 }
             }
