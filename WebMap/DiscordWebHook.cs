@@ -8,31 +8,36 @@ namespace WebMap
     public class DiscordWebHook : IDisposable
     {
         private readonly WebClient webClient;
-        private readonly static NameValueCollection values = new NameValueCollection();
         private readonly string webHookUrl;
+
+        public bool IsEnabled => !webHookUrl.IsNullOrEmpty();
 
         public DiscordWebHook(string url)
         {
             webHookUrl = url;
-            webClient = new WebClient();
+            if (IsEnabled)
+            {
+                webClient = new WebClient();
+            }
         }
 
         public void SendMessage(string msgSend)
         {
-            values.Remove("content");
-            values.Add("content", msgSend);
-
-            if (webHookUrl.IsNullOrEmpty())
+            if (!IsEnabled)
             {
-                ZLog.Log($"WebMap::DiscordWebHook::SendMessage: {values}");
                 return;
             }
+
+            NameValueCollection values = new NameValueCollection
+            {
+                { "content", msgSend }
+            };
             webClient.UploadValues(webHookUrl, values);
         }
 
         public void Dispose()
         {
-            webClient.Dispose();
+            webClient?.Dispose();
         }
     }
 }
