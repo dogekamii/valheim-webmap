@@ -1,8 +1,10 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
 using WebSocketSharp;
@@ -12,131 +14,130 @@ using static WebMap.WebMapConfig;
 
 namespace WebMap
 {
-    [Serializable]
-    public struct MapMessage
+    internal readonly struct PublicIdentityValue
     {
-        public long id;
-        public int type;
-        public string name;
-        public string message;
-        public string ts;
+        internal readonly long Id;
+        internal readonly string Alias;
 
-        public MapMessage(long id, int type, string name, string message)
+        internal PublicIdentityValue(long id, string alias)
         {
-            this.id = id;
-            this.type = type;
-            this.name = name;
-            this.message = message;
-            this.ts = DateTime.UtcNow.ToString("o", System.Globalization.CultureInfo.InvariantCulture);
+            Id = id;
+            Alias = alias;
         }
+    }
 
-        public string ToJson()
+    internal static class PublicIdentity
+    {
+        private const long MaxJavaScriptInteger = 9007199254740991L;
+        private static readonly object Sync = new object();
+        private static readonly Dictionary<string, PublicIdentityValue> Identities = new Dictionary<string, PublicIdentityValue>(StringComparer.Ordinal);
+        private static readonly HashSet<long> UsedIds = new HashSet<long>();
+        private static readonly RandomNumberGenerator Generator = RandomNumberGenerator.Create();
+        private static int nextAlias = 1;
+
+        internal static PublicIdentityValue ForOwner(string owner)
         {
-            return JsonUtility.ToJson(this);
+            lock (Sync)
+            {
+                PublicIdentityValue existing;
+                if (Identities.TryGetValue(owner, out existing))
+                {
+                    return existing;
+                }
+
+                long id;
+                byte[] bytes = new byte[8];
+                do
+                {
+                    Generator.GetBytes(bytes);
+                    id = (long)(BitConverter.ToUInt64(bytes, 0) & (ulong)MaxJavaScriptInteger);
+                } while (id == 0 || !UsedIds.Add(id));
+
+                int aliasNumber = nextAlias++;
+                PublicIdentityValue identity = new PublicIdentityValue(id, $"Player {aliasNumber}");
+                Identities.Add(owner, identity);
+                return identity;
+            }
         }
     }
 
     public class WebSocketHandler : WebSocketBehavior
     {
+        private bool playersSent;
+
         protected override void OnMessage(MessageEventArgs e)
         {
-            if (e.Data.ToString() == "players")
+            if (!e.IsText || e.RawData == null || e.RawData.Length > 32 || playersSent ||
+                !string.Equals(e.Data, "players", StringComparison.Ordinal))
             {
-                Send(MapDataServer.getInstance().getPlayerResponse(true));
+                Close(CloseStatusCode.PolicyViolation, "invalid request");
+                return;
             }
-            base.OnMessage(e);
+
+            MapDataServer server = MapDataServer.getInstance();
+            if (server == null)
+            {
+                Close(CloseStatusCode.Away, "unavailable");
+                return;
+            }
+
+            playersSent = true;
+            Send(server.GetPlayerSnapshot());
         }
     }
 
     public class MapDataServer
     {
-        // 'self' limits HTTP(S) and WS(S) connections to the WebMap origin.
-        // data: is required only for the bundled favicon; inline styles are
-        // required by the renderer, while scripts remain external-only.
         private const string ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+        private const int MaxPublicOnlineCount = 10000;
 
         private static readonly Dictionary<string, string> contentTypes = new Dictionary<string, string> {
-            {"html", "text/html"},
-            {"js", "text/javascript"},
-            {"css", "text/css"},
-            {"png", "image/png"},
-            {"jpg", "image/jpeg"},
-            {"webp", "image/webp"}
+            {"html", "text/html"}, {"js", "text/javascript"}, {"css", "text/css"},
+            {"png", "image/png"}, {"jpg", "image/jpeg"}, {"webp", "image/webp"}
         };
 
-        private readonly System.Threading.Timer broadcastTimer;
-        private readonly Dictionary<string, byte[]> fileCache;
-        public Texture2D fogTexture;
-        private readonly HttpServer httpServer;
-
-        public byte[] mapImageData;
-        public List<string> pins = new List<string>();
-        public List<MapMessage> sentMessages = new List<MapMessage>();
-        public List<MapMessage> newMessages = new List<MapMessage>();
-        public List<ZNetPeer> players = new List<ZNetPeer>();
-        public string lastPlayerResponse = "";
-        private bool forceReload = false;
-        private readonly string publicRoot;
-        private readonly WebSocketServiceHost webSocketHandler;
         private static MapDataServer __instance;
+        private readonly object fileCacheSync = new object();
+        private readonly object lifecycleSync = new object();
+        private readonly object pinSync = new object();
+        private readonly Dictionary<string, byte[]> fileCache = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        private readonly List<string> privatePins = new List<string>();
+        private readonly HttpServer httpServer;
+        private readonly WebSocketServiceHost webSocketHandler;
+        private readonly WebMap owner;
+        private readonly string publicRoot;
+        private Coroutine publicationCoroutine;
+        private bool stopping;
+        private volatile bool forceReload;
+        private volatile string playerSnapshot = "players\n{\"online\":0}";
+        private volatile byte[] configSnapshot = Encoding.UTF8.GetBytes("{}");
+        private volatile byte[] mapSnapshot = new byte[0];
+        private volatile byte[] pinSnapshot = new byte[0];
+        private volatile byte[] fogSnapshot = new byte[0];
 
-        public MapDataServer()
+        public Texture2D fogTexture;
+        public List<ZNetPeer> players = new List<ZNetPeer>();
+
+        public MapDataServer(WebMap owner)
         {
+            this.owner = owner;
             __instance = this;
+            publicRoot = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty, "web");
 
             httpServer = new HttpServer(SERVER_PORT);
             httpServer.AddWebSocketService<WebSocketHandler>("/");
             httpServer.KeepClean = true;
-
             webSocketHandler = httpServer.WebSocketServices["/"];
-
-            broadcastTimer = new System.Threading.Timer(e =>
-            {
-                string dataString = "";
-                if (forceReload)
-                {
-                    webSocketHandler.Sessions.Broadcast("reload\n");
-                    forceReload = false;
-                }
-                else
-                {
-                    dataString = getPlayerResponse(false);
-                    if (dataString != lastPlayerResponse)
-                    {
-                        webSocketHandler.Sessions.Broadcast(dataString);
-                        lastPlayerResponse = dataString;
-                    }
-
-                    if (newMessages.Count > 0)
-                    {
-                        List<string> tosend = new List<string>();
-
-                        newMessages.ForEach(message =>
-                        {
-                            if (WebMapConfig.MAX_MESSAGES < sentMessages.Count) sentMessages.RemoveAt(0);
-                            tosend.Add(message.ToJson());
-                            sentMessages.Add(message);
-                        });
-                        if (tosend.Count > 0) webSocketHandler.Sessions.Broadcast("messages\n[" + string.Join(",", tosend) + "]");
-                        newMessages.Clear();
-                        newMessages.TrimExcess();
-                    }
-                }
-            }, null, TimeSpan.Zero, TimeSpan.FromSeconds(PLAYER_UPDATE_INTERVAL));
-
-            publicRoot = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty, "web");
-
-            fileCache = new Dictionary<string, byte[]>();
-
             httpServer.OnGet += (sender, e) =>
             {
-                HttpListenerRequest req = e.Request;
                 ApplySecurityHeaders(e.Response);
-
-                if (ProcessSpecialRoutes(e)) return;
-
-                ServeStaticFiles(e);
+                if (!ProcessSpecialRoutes(e))
+                {
+                    ServeStaticFiles(e);
+                }
             };
+
+            publicationCoroutine = owner.StartCoroutine(PublishSnapshotsOnMainThread());
         }
 
         private static void ApplySecurityHeaders(HttpListenerResponse res)
@@ -147,109 +148,153 @@ namespace WebMap
             res.Headers.Add("Content-Security-Policy", ContentSecurityPolicy);
         }
 
-        public string getPlayerResponse(bool sendLast)
+        private static void SetNoStore(HttpListenerResponse res)
         {
-            if (sendLast && lastPlayerResponse.Length > 0)
+            res.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
+        }
+
+        private string BuildPlayerSnapshot()
+        {
+            int count = players == null ? 0 : players.Count;
+            int boundedCount = Math.Min(MaxPublicOnlineCount, Math.Max(0, count));
+            return "players\n{\"online\":" + boundedCount.ToString(CultureInfo.InvariantCulture) + "}";
+        }
+
+        public IEnumerator PublishSnapshotsOnMainThread()
+        {
+            while (!stopping)
             {
-                return lastPlayerResponse;
+                playerSnapshot = BuildPlayerSnapshot();
+                configSnapshot = Encoding.UTF8.GetBytes(MakeClientConfigJson());
+                PublishPinSnapshot();
+                if (fogTexture != null)
+                {
+                    fogSnapshot = WebMap.EncodeTextureToPng(fogTexture);
+                }
+
+                if (forceReload)
+                {
+                    forceReload = false;
+                    webSocketHandler.Sessions.Broadcast("reload");
+                }
+
+                yield return new WaitForSeconds(Mathf.Max(0.1f, PLAYER_UPDATE_INTERVAL));
             }
-
-            string dataString = "players\n";
-
-            players.ForEach(player =>
-            {
-                ZDO zdoData = null;
-                try
-                {
-                    zdoData = ZDOMan.instance.GetZDO(player.m_characterID);
-                }
-                catch { }
-
-                if (zdoData != null)
-                {
-                    Vector3 pos = zdoData.GetPosition();
-                    int maxHealth = (int)Math.Ceiling(zdoData.GetFloat("max_health", 25));
-                    int health = (int)Math.Ceiling(zdoData.GetFloat("health", maxHealth));
-                    int dead = zdoData.GetBool("dead") ? 1 : 0;
-                    int pvp = zdoData.GetBool("pvp") ? 1 : 0;
-                    int inbed = zdoData.GetBool("inBed") ? 1 : 0;
-
-                    maxHealth = Math.Max(maxHealth, health);
-
-                    dataString += $"{player.m_uid}\n{player.m_playerName}\n{health}\n{maxHealth}\n";
-                    if (!player.m_publicRefPos)
-                        dataString += "hidden\n";
-                    if (player.m_publicRefPos || WebMapConfig.ALWAYS_VISIBLE || WebMapConfig.ALWAYS_MAP)
-                        dataString += FormattableString.Invariant($"{pos.x:0.##},{pos.z:0.##}\n");
-                    dataString += $"{dead}{pvp}{inbed}\n\n";
-                }
-
-            });
-            return dataString.Trim();
         }
 
         public static MapDataServer getInstance()
         {
             return __instance;
         }
+
+        public string GetPlayerSnapshot()
+        {
+            return playerSnapshot;
+        }
+
         public void Stop()
         {
-            broadcastTimer.Dispose();
-            httpServer.Stop();
+            Coroutine coroutine;
+            lock (lifecycleSync)
+            {
+                if (stopping)
+                {
+                    return;
+                }
+                stopping = true;
+                coroutine = publicationCoroutine;
+                publicationCoroutine = null;
+                if (ReferenceEquals(__instance, this))
+                {
+                    __instance = null;
+                }
+            }
+
+            if (coroutine != null && owner != null)
+            {
+                owner.StopCoroutine(coroutine);
+            }
+
+            try
+            {
+                foreach (string id in new List<string>(webSocketHandler.Sessions.IDs))
+                {
+                    webSocketHandler.Sessions.CloseSession(id);
+                }
+            }
+            catch
+            {
+                ZLog.LogWarning("WebMap: websocket shutdown failed");
+            }
+
+            try
+            {
+                httpServer.Stop();
+            }
+            catch
+            {
+                ZLog.LogWarning("WebMap: HTTP shutdown failed");
+            }
         }
 
         private void ServeStaticFiles(HttpRequestEventArgs e)
         {
             HttpListenerRequest req = e.Request;
             HttpListenerResponse res = e.Response;
+            string requestPath = req.Url.AbsolutePath;
+            if (requestPath == "/") requestPath = "/index.html";
+            string requestedFile = Path.GetFileName(requestPath);
+            string fileExt = Path.GetExtension(requestedFile).TrimStart('.');
 
-            string rawRequestPath = req.RawUrl;
-            if (rawRequestPath == "/") rawRequestPath = "/index.html";
-
-            string[] pathParts = rawRequestPath.Split('/');
-            string requestedFile = pathParts[pathParts.Length - 1];
-            string[] fileParts = requestedFile.Split('.');
-            string fileExt = fileParts[fileParts.Length - 1];
-
-            if (contentTypes.ContainsKey(fileExt))
+            if (!contentTypes.ContainsKey(fileExt))
             {
-                byte[] requestedFileBytes = new byte[0];
-                if (fileCache.ContainsKey(requestedFile))
-                {
-                    requestedFileBytes = fileCache[requestedFile];
-                }
-                else
-                {
-                    string filePath = Path.Combine(publicRoot, requestedFile);
-                    try
-                    {
-                        requestedFileBytes = File.ReadAllBytes(filePath);
-                        if (CACHE_SERVER_FILES) fileCache.Add(requestedFile, requestedFileBytes);
-                    }
-                    catch (Exception ex)
-                    {
-                        ZLog.LogError("WebMap: FAILED TO READ FILE! " + ex.Message);
-                    }
-                }
-
-                if (requestedFileBytes.Length > 0)
-                {
-                    res.Headers.Add(HttpResponseHeader.CacheControl, "public, max-age=604800, immutable");
-                    res.ContentType = contentTypes[fileExt];
-                    res.StatusCode = 200;
-                    res.ContentLength64 = requestedFileBytes.Length;
-                    res.Close(requestedFileBytes, true);
-                }
-                else
-                {
-                    res.StatusCode = 404;
-                    res.Close();
-                }
-            }
-            else
-            {
+                SetNoStore(res);
                 res.StatusCode = 404;
                 res.Close();
+                return;
+            }
+
+            byte[] requestedFileBytes = null;
+            lock (fileCacheSync)
+            {
+                fileCache.TryGetValue(requestedFile, out requestedFileBytes);
+            }
+
+            if (requestedFileBytes == null)
+            {
+                try
+                {
+                    requestedFileBytes = File.ReadAllBytes(Path.Combine(publicRoot, requestedFile));
+                    CacheStaticFile(requestedFile, requestedFileBytes);
+                }
+                catch
+                {
+                    ZLog.LogError("WebMap: static file read failed");
+                    requestedFileBytes = new byte[0];
+                }
+            }
+
+            if (requestedFileBytes.Length == 0)
+            {
+                SetNoStore(res);
+                res.StatusCode = 404;
+                res.Close();
+                return;
+            }
+
+            res.Headers.Add(HttpResponseHeader.CacheControl, "public, max-age=604800, immutable");
+            res.ContentType = contentTypes[fileExt];
+            res.StatusCode = 200;
+            res.ContentLength64 = requestedFileBytes.Length;
+            res.Close(requestedFileBytes, true);
+        }
+
+        private void CacheStaticFile(string name, byte[] contents)
+        {
+            if (!CACHE_SERVER_FILES) return;
+            lock (fileCacheSync)
+            {
+                if (!fileCache.ContainsKey(name)) fileCache.Add(name, contents);
             }
         }
 
@@ -257,60 +302,47 @@ namespace WebMap
         {
             HttpListenerRequest req = e.Request;
             HttpListenerResponse res = e.Response;
-            string rawRequestPath = req.RawUrl;
-            byte[] textBytes;
+            string requestPath = req.Url.AbsolutePath;
+            byte[] bytes;
 
-            switch (rawRequestPath)
+            switch (requestPath)
             {
                 case "/config":
-                    res.Headers.Add(HttpResponseHeader.CacheControl, "no-cache");
+                    bytes = configSnapshot;
+                    SetNoStore(res);
                     res.ContentType = "application/json";
-                    res.StatusCode = 200;
-                    textBytes = Encoding.UTF8.GetBytes(MakeClientConfigJson());
-                    res.ContentLength64 = textBytes.Length;
-                    res.Close(textBytes, true);
-                    return true;
+                    break;
                 case "/map":
-                    // Doing things this way to make the full map harder to accidentally see.
+                    bytes = mapSnapshot;
                     res.Headers.Add(HttpResponseHeader.CacheControl, "public, max-age=604800, immutable");
                     res.ContentType = "application/octet-stream";
-                    res.StatusCode = 200;
-                    res.ContentLength64 = mapImageData.Length;
-                    res.Close(mapImageData, true);
-                    return true;
+                    break;
                 case "/fog":
-                    res.Headers.Add(HttpResponseHeader.CacheControl, "no-cache");
+                    bytes = fogSnapshot;
+                    SetNoStore(res);
                     res.ContentType = "image/png";
-                    res.StatusCode = 200;
-                    byte[] fogBytes = WebMap.EncodeTextureToPng(fogTexture);
-                    res.ContentLength64 = fogBytes.Length;
-                    res.Close(fogBytes, true);
-                    return true;
-                case "/messages":
-                    res.Headers.Add(HttpResponseHeader.CacheControl, "no-cache");
-                    res.ContentType = "application/json";
-                    res.StatusCode = 200;
-                    List<string> tosend = new List<string>();
-                    sentMessages.ForEach(message =>
-                    {
-                        tosend.Add(message.ToJson());
-                    });
-                    textBytes = Encoding.UTF8.GetBytes("[" + string.Join(", ", tosend) + "]");
-                    res.ContentLength64 = textBytes.Length;
-                    res.Close(textBytes, true);
-                    return true;
+                    break;
                 case "/pins":
-                    res.Headers.Add(HttpResponseHeader.CacheControl, "no-cache");
+                    bytes = pinSnapshot;
+                    SetNoStore(res);
                     res.ContentType = "text/csv";
-                    res.StatusCode = 200;
-                    string text = string.Join("\n", pins);
-                    textBytes = Encoding.UTF8.GetBytes(text);
-                    res.ContentLength64 = textBytes.Length;
-                    res.Close(textBytes, true);
-                    return true;
+                    break;
+                default:
+                    return false;
             }
 
-            return false;
+            if (bytes == null || bytes.Length == 0)
+            {
+                SetNoStore(res);
+                res.StatusCode = 404;
+                res.Close();
+                return true;
+            }
+
+            res.StatusCode = 200;
+            res.ContentLength64 = bytes.Length;
+            res.Close(bytes, true);
+            return true;
         }
 
         public void Reload()
@@ -321,46 +353,168 @@ namespace WebMap
         public void ListenAsync()
         {
             httpServer.Start();
-
             if (httpServer.IsListening)
-                ZLog.Log($"WebMap: HTTP Server Listening on port {SERVER_PORT}");
+                ZLog.Log("WebMap: HTTP server started");
             else
-                ZLog.LogError("WebMap: HTTP Server Failed To Start !!!");
+                ZLog.LogError("WebMap: HTTP server failed");
         }
 
-        public void BroadcastPing(long id, string name, Vector3 position)
+        public void PublishMap(byte[] bytes)
         {
-            webSocketHandler.Sessions.Broadcast($"ping\n{id}\n{name}\n{FixedValue(position.x)},{FixedValue(position.z)}");
+            mapSnapshot = bytes ?? new byte[0];
         }
 
-        public void BroadcastMessage(long id, int type, string name, string message)
+        public void ReplacePins(IEnumerable<string> pins)
         {
-            webSocketHandler.Sessions.Broadcast($"message\n{id}\n{type}\n{name}\n{message}");
+            lock (pinSync)
+            {
+                privatePins.Clear();
+                if (pins != null) privatePins.AddRange(pins);
+            }
+            PublishPinSnapshot();
         }
 
-        public void AddPin(string id, string pinId, string type, string name, Vector3 position, string pinText)
+        public string[] GetPrivatePinsSnapshot()
         {
-            pins.Add($"{id},{pinId},{type},{name},{FixedValue(position.x)},{FixedValue(position.z)},{pinText}");
-            webSocketHandler.Sessions.Broadcast(
-                $"pin\n{id}\n{pinId}\n{type}\n{name}\n{FixedValue(position.x)},{FixedValue(position.z)}\n{pinText}");
+            lock (pinSync)
+            {
+                return privatePins.ToArray();
+            }
+        }
+
+        public int CountPinsForOwner(string owner)
+        {
+            int count = 0;
+            lock (pinSync)
+            {
+                foreach (string pin in privatePins)
+                {
+                    string parsedOwner;
+                    if (TryGetPinOwner(pin, out parsedOwner) && string.Equals(parsedOwner, owner, StringComparison.Ordinal)) count++;
+                }
+            }
+            return count;
+        }
+
+        public int FindFirstPinIndex(string owner)
+        {
+            lock (pinSync)
+            {
+                for (int i = 0; i < privatePins.Count; i++)
+                {
+                    string parsedOwner;
+                    if (TryGetPinOwner(privatePins[i], out parsedOwner) && string.Equals(parsedOwner, owner, StringComparison.Ordinal)) return i;
+                }
+            }
+            return -1;
+        }
+
+        public int FindLastPinIndex(string owner, string text = null)
+        {
+            lock (pinSync)
+            {
+                for (int i = privatePins.Count - 1; i >= 0; i--)
+                {
+                    string[] parts;
+                    if (!TryParsePrivatePin(privatePins[i], out parts) || !string.Equals(parts[0], owner, StringComparison.Ordinal)) continue;
+                    if (text == null || string.Equals(parts[parts.Length - 1], text, StringComparison.Ordinal)) return i;
+                }
+            }
+            return -1;
+        }
+
+        public void AddPin(string owner, string pinId, string type, Vector3 position, string pinText)
+        {
+            if (!IsValidOwnerKey(owner)) return;
+            string record = $"{owner},{pinId},{type},,{FixedValue(position.x)},{FixedValue(position.z)},{pinText}";
+            lock (pinSync)
+            {
+                privatePins.Add(record);
+            }
+            PublishPinSnapshot();
+
+            string publicPin;
+            if (TrySerializePublicPin(record, out publicPin))
+            {
+                string[] parts = publicPin.Split(',');
+                webSocketHandler.Sessions.Broadcast($"pin\n{parts[0]}\n{parts[1]}\n{parts[2]}\n{parts[3]}\n{parts[4]},{parts[5]}\n{parts[6]}");
+            }
         }
 
         public void RemovePin(int idx)
         {
-            string pin = pins[idx];
-            string[] pinParts = pin.Split(',');
-            pins.RemoveAt(idx);
-            webSocketHandler.Sessions.Broadcast($"rmpin\n{pinParts[1]}");
+            string pinId = null;
+            lock (pinSync)
+            {
+                if (idx < 0 || idx >= privatePins.Count) return;
+                string[] parts;
+                if (TryParsePrivatePin(privatePins[idx], out parts)) pinId = parts[1];
+                privatePins.RemoveAt(idx);
+            }
+            PublishPinSnapshot();
+            if (!string.IsNullOrEmpty(pinId)) webSocketHandler.Sessions.Broadcast("rmpin\n" + pinId);
         }
 
-        public void AddMessage(long id, int type, string name, string message)
+        private void PublishPinSnapshot()
         {
-            newMessages.Add(new MapMessage(id, type, name, message));
+            string[] source;
+            lock (pinSync)
+            {
+                source = privatePins.ToArray();
+            }
+
+            List<string> serialized = new List<string>();
+            foreach (string pin in source)
+            {
+                string publicPin;
+                if (TrySerializePublicPin(pin, out publicPin)) serialized.Add(publicPin);
+            }
+            pinSnapshot = Encoding.UTF8.GetBytes(string.Join("\n", serialized));
         }
 
-        private static string FixedValue(float f)
+        internal static bool IsValidOwnerKey(string owner)
         {
-            return f.ToString("F2", CultureInfo.InvariantCulture);
+            return !string.IsNullOrWhiteSpace(owner) && owner.IndexOf(',') < 0 && owner.IndexOf('\r') < 0 && owner.IndexOf('\n') < 0;
+        }
+
+        private static bool TryGetPinOwner(string record, out string owner)
+        {
+            string[] parts;
+            if (!TryParsePrivatePin(record, out parts))
+            {
+                owner = null;
+                return false;
+            }
+            owner = parts[0];
+            return true;
+        }
+
+        private static bool TryParsePrivatePin(string record, out string[] pinParts)
+        {
+            pinParts = null;
+            if (string.IsNullOrWhiteSpace(record) || record.IndexOf('\r') >= 0 || record.IndexOf('\n') >= 0) return false;
+            string[] parts = record.Split(',');
+            if (parts.Length < 7 || !IsValidOwnerKey(parts[0])) return false;
+            pinParts = parts;
+            return true;
+        }
+
+        private static bool TrySerializePublicPin(string record, out string serialized)
+        {
+            serialized = null;
+            string[] pinParts;
+            if (!TryParsePrivatePin(record, out pinParts)) return false;
+            PublicIdentityValue identity = PublicIdentity.ForOwner(pinParts[0]);
+            serialized = string.Join(",", new[] {
+                identity.Id.ToString(CultureInfo.InvariantCulture), pinParts[1], pinParts[2], identity.Alias,
+                pinParts[4], pinParts[5], pinParts[pinParts.Length - 1]
+            });
+            return true;
+        }
+
+        private static string FixedValue(float value)
+        {
+            return value.ToString("F2", CultureInfo.InvariantCulture);
         }
     }
 }

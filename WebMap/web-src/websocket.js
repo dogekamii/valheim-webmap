@@ -6,138 +6,59 @@ const addActionListener = (type, func) => {
     actionListeners[type] = listeners;
 };
 
-const getActionListeners = (type) => {
-    return actionListeners[type] || [];
-}
+const getActionListeners = (type) => actionListeners[type] || [];
 
 const actions = {
     players: (lines, message) => {
-        const msg = message.replace(/^players\n/, '');
-        const playerSections = msg.split('\n\n');
-        const playerData = [];
-        playerSections.forEach(playerSection => {
-            const playerLines = playerSection.split('\n');
-            if (typeof playerLines[2] === 'undefined') {
-                return;
-            }
-            const newPlayer = {
-                id: playerLines.shift(),
-                name: playerLines.shift(),
-                health: playerLines.shift(),
-                maxHealth: playerLines.shift(),
-                flags: {
-                    dead: false,
-                    pvp: false,
-                    inbed: false,
-                },
-            };
-
-            if (playerLines[0] == 'hidden') {
-                newPlayer.hidden = true;
-                playerLines.shift();
-            } else {
-                newPlayer.hidden = false;
-            }
-            if (typeof playerLines[0] !== 'undefined') {
-                const xyz = playerLines.shift().split(',').map(parseFloat);
-                newPlayer.x = xyz[0];
-                newPlayer.z = xyz[1];
-            }
-            if (typeof playerLines[0] !== 'undefined') {
-                const flags = playerLines.shift();
-                const flag_types = ['dead', 'pvp', 'inbed'];
-                console.log(flags);
-                for (let i = 0; i < flag_types.length; i++) {
-                    console.log(i + " " + flag_types[i] + " " + flags[i]);
-                    newPlayer.flags[flag_types[i]] = Boolean(Number(flags[i]));
-                }
-            }
-            playerData.push(newPlayer);
-        });
-
-        actionListeners.players.forEach(func => {
-            func(playerData);
-        });
-    },
-    ping: (lines) => {
-        const xz = lines[2].split(',');
-        const ping = {
-            playerId: lines[0],
-            name: lines[1],
-            x: parseFloat(xz[0]),
-            z: parseFloat(xz[1])
-        };
-        actionListeners.ping.forEach(func => {
-            func(ping);
-        });
+        const value = JSON.parse(message.replace(/^players\n/, ''));
+        if (!value || !Number.isInteger(value.online) || value.online < 0 || value.online > 10000) return;
+        getActionListeners('players').forEach(func => func(value));
     },
     pin: (lines) => {
-        const xz = lines[4].split(',').map(parseFloat);
-        const pin = {
-            id: lines[1],
-            uid: lines[0],
-            type: lines[2],
-            name: lines[3],
-            x: xz[0],
-            z: xz[1],
-            text: lines[5]
-        };
-        actionListeners.pin.forEach(func => {
-            func(pin);
-        });
+        if (lines.length !== 6) return;
+        const xz = lines[4].split(',').map(Number);
+        if (xz.length !== 2 || !xz.every(Number.isFinite)) return;
+        const pin = { id: lines[1], uid: lines[0], type: lines[2], name: lines[3], x: xz[0], z: xz[1], text: lines[5] };
+        getActionListeners('pin').forEach(func => func(pin));
     },
-    rmpin: (lines) => {
-        actionListeners.rmpin.forEach(func => {
-            func(lines[0]);
-        });
-    },
-    messages: (lines, message) => {
-        const msg = message.replace(/^messages\n/, '');
-        var messages = JSON.parse(msg);
-        actionListeners.messages.forEach(func => {
-            func(messages);
-        });
-    },
-    reload: (lines) => {
-	window.history.forward(1);
-    }
+    rmpin: (lines) => getActionListeners('rmpin').forEach(func => func(lines[0])),
+    reload: () => window.location.reload()
 };
 
-Object.keys(actions).forEach(key => {
-    actionListeners[key] = [];
-});
+Object.keys(actions).forEach(key => { actionListeners[key] = []; });
 
+let socket;
+let reconnectTimer;
 let connectionTries = 0;
+
+const scheduleReconnect = () => {
+    clearTimeout(reconnectTimer);
+    connectionTries += 1;
+    const delay = Math.min(120000, connectionTries * connectionTries * 1000);
+    const jitter = Math.floor(Math.random() * 1000);
+    reconnectTimer = setTimeout(init, delay + jitter);
+};
+
 const init = () => {
-    const websocketUrl = location.href.split('?')[0].replace(/^http/, 'ws');
-    const ws = new WebSocket(websocketUrl);
-    ws.addEventListener('message', (e) => {
-        const message = e.data.trim();
+    clearTimeout(reconnectTimer);
+    if (socket) {
+        socket.onclose = null;
+        socket.close();
+    }
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    socket = new WebSocket(`${protocol}//${location.host}/`);
+    socket.addEventListener('message', (event) => {
+        if (typeof event.data !== 'string') return;
+        const message = event.data.trim();
         const lines = message.split('\n');
         const action = lines.shift();
-        const actionFunc = actions[action];
-        if (actionFunc) {
-            actionFunc(lines, message);
-        } else {
-            console.log("unknown websocket message: ", e.data);
-        }
+        if (actions[action]) actions[action](lines, message);
     });
-
-    ws.addEventListener('open', () => {
+    socket.addEventListener('open', () => {
         connectionTries = 0;
-        ws.send('players');
+        socket.send('players');
     });
-
-    ws.addEventListener('close', () => {
-        connectionTries++;
-        const seconds = Math.min(connectionTries * (connectionTries + 1), 120);
-        setTimeout(init, seconds * 1000);
-    });
+    socket.addEventListener('close', scheduleReconnect);
 };
 
-export default {
-    init,
-    addActionListener,
-    getActionListeners
-};
-
+export default { init, addActionListener, getActionListeners };

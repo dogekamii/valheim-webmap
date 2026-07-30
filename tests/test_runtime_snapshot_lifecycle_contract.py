@@ -31,7 +31,6 @@ def test_workers_read_only_immutable_aggregate_fog_and_pin_snapshots():
     assert 'string.Join("\\n", pins)' not in routes
     websocket = section(SERVER, "public class WebSocketHandler", "public class MapDataServer")
     assert "ZDOMan" not in websocket
-    assert "players" not in websocket or "GetPlayerSnapshot" in websocket
     assert "GetPlayerSnapshot" in websocket
     assert ".Broadcast(playerSnapshot" not in SERVER
 
@@ -57,7 +56,7 @@ def test_file_cache_is_synchronized_and_shutdown_is_idempotent():
     assert "stopping" in stop
     assert "StopCoroutine" in stop
     assert "httpServer.Stop()" in stop
-    assert "webSocketHandler.Sessions.CloseAll" in stop
+    assert "webSocketHandler.Sessions.CloseSession" in stop
     assert "__instance" in stop
     on_destroy = section(WEBMAP, "public void OnDestroy", "public void Online")
     assert "mapDataServer?.Stop()" in on_destroy

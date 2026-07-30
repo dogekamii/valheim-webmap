@@ -11,3 +11,5 @@ export DOTNET_NOLOGO=1
 dotnet tool restore
 
 dotnet cake "$@"
+
+./scripts/inspect-release-privacy.py

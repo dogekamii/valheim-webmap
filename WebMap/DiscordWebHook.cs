@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Specialized;
 using System.Net;
 using WebSocketSharp;
@@ -7,31 +7,33 @@ namespace WebMap
 {
     public class DiscordWebHook : IDisposable
     {
-        private readonly WebClient webClient;
-        private readonly static NameValueCollection values = new NameValueCollection();
+        private readonly WebClient webClient = new WebClient();
         private readonly string webHookUrl;
+        private bool disposed;
 
         public DiscordWebHook(string url)
         {
             webHookUrl = url;
-            webClient = new WebClient();
         }
 
-        public void SendMessage(string msgSend)
+        public void SendMessage(string message)
         {
-            values.Remove("content");
-            values.Add("content", msgSend);
-
-            if (webHookUrl.IsNullOrEmpty())
+            if (disposed || webHookUrl.IsNullOrEmpty()) return;
+            try
             {
-                ZLog.Log($"WebMap::DiscordWebHook::SendMessage: {values}");
-                return;
+                NameValueCollection values = new NameValueCollection { { "content", message } };
+                webClient.UploadValues(webHookUrl, values);
             }
-            webClient.UploadValues(webHookUrl, values);
+            catch
+            {
+                ZLog.LogWarning("WebMap: webhook delivery failed");
+            }
         }
 
         public void Dispose()
         {
+            if (disposed) return;
+            disposed = true;
             webClient.Dispose();
         }
     }
