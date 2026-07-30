@@ -11,6 +11,7 @@ CONFIG = ROOT / "WebMap" / "Config.cs"
 SERVER = ROOT / "WebMap" / "MapDataServer.cs"
 PROJECT = ROOT / "WebMap" / "WebMap.csproj"
 WORKFLOW = ROOT / ".github" / "workflows" / "tests.yml"
+CI_REQUIREMENTS = ROOT / "requirements-ci.txt"
 
 
 def render_markdown(*inputs):
@@ -125,11 +126,84 @@ def test_workflow_is_least_privilege_pinned_and_not_duplicated_on_pr_pushes():
     workflow = WORKFLOW.read_text(encoding="utf-8")
     assert "branches: [main]" in workflow and "branches: ['**']" not in workflow and "pull_request:" in workflow
     assert "permissions:\n  contents: read\n" in workflow
-    assert "actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4" in workflow
-    assert "actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5" in workflow
-    assert "actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4" in workflow
-    assert "actions/checkout@v4" not in workflow and "actions/setup-python@v5" not in workflow and "actions/setup-node@v4" not in workflow
+    expected = {
+        "actions/checkout": {("3d3c42e5aac5ba805825da76410c181273ba90b1", "v7.0.1")},
+        "actions/setup-python": {("5fda3b95a4ea91299a34e894583c3862153e4b97", "v7.0.0")},
+        "actions/setup-node": {("820762786026740c76f36085b0efc47a31fe5020", "v7.0.0")},
+    }
+    found = {}
+    for action, commit, tag in re.findall(
+        r"uses:\s+(actions/(?:checkout|setup-python|setup-node))@([0-9a-f]{40})\s+#\s+(v\S+)", workflow
+    ):
+        found.setdefault(action, set()).add((commit, tag))
+    assert found == expected
+    assert not re.search(r"uses:\s+actions/(?:checkout|setup-python|setup-node)@v", workflow)
     assert "run: npm audit" in workflow
+
+
+def test_workflow_pins_python_and_installs_only_the_hash_locked_ci_closure():
+    workflow = WORKFLOW.read_text(encoding="utf-8")
+    assert "python-version: '3.11.15'" in workflow
+    command = (
+        "python -m pip install --disable-pip-version-check --require-hashes "
+        "--no-deps --requirement requirements-ci.txt"
+    )
+    assert command in workflow
+    assert not re.search(r"pip install[^\n]*\bpytest\b", workflow)
+
+
+def test_ci_requirements_lock_is_exact_complete_and_hash_locked():
+    assert CI_REQUIREMENTS.is_file(), "requirements-ci.txt must be committed"
+    logical_lines = []
+    current = ""
+    for raw_line in CI_REQUIREMENTS.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        current = f"{current} {line}".strip()
+        if current.endswith("\\"):
+            current = current[:-1].rstrip()
+            continue
+        logical_lines.append(current)
+        current = ""
+    assert not current
+
+    actual = {}
+    for line in logical_lines:
+        tokens = line.split()
+        name, version = tokens[0].split("==", 1)
+        hashes = {
+            token.removeprefix("--hash=sha256:")
+            for token in tokens[1:]
+            if token.startswith("--hash=sha256:")
+        }
+        assert len(hashes) == 2
+        assert len(tokens) == 1 + len(hashes)
+        actual[name.lower()] = (version, hashes)
+
+    expected = {
+        "iniconfig": ("2.3.0", {
+            "f631c04d2c48c52b84d0d0549c99ff3859c98df65b3101406327ecc7d53fbf12",
+            "c76315c77db068650d49c5b56314774a7804df16fee4402c1f19d6d15d8c4730",
+        }),
+        "packaging": ("26.2", {
+            "5fc45236b9446107ff2415ce77c807cee2862cb6fac22b8a73826d0693b0980e",
+            "ff452ff5a3e828ce110190feff1178bb1f2ea2281fa2075aadb987c2fb221661",
+        }),
+        "pluggy": ("1.6.0", {
+            "e920276dd6813095e9377c0bc5566d94c932c33b27a3e3945d8389c374dd4746",
+            "7dcc130b76258d33b90f61b658791dede3486c3e6bfb003ee5c9bfb396dd22f3",
+        }),
+        "pygments": ("2.20.0", {
+            "81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176",
+            "6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f",
+        }),
+        "pytest": ("9.1.1", {
+            "37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c",
+            "1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313",
+        }),
+    }
+    assert actual == expected
 
 
 def test_compile_only_game_references_are_not_release_payload_dependencies():
