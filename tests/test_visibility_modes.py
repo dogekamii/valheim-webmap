@@ -14,7 +14,7 @@ assert 'WORLD_VISIBILITY_MODE = "fogged"' in config_source
 assert 'world_visibility_mode' in config_source
 assert '"fogged", "hybrid", "full"' in config_source
 assert 'NormalizeWorldVisibilityMode' in config_source
-assert 'config["world_visibility_mode"] = WORLD_VISIBILITY_MODE;' in config_source
+assert 'world_visibility_mode = WORLD_VISIBILITY_MODE' in config_source
 
 # Browser rendering must consume the server-provided policy and defensively
 # retain fogged rendering when a response is missing or malformed.
