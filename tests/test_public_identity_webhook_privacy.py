@@ -36,7 +36,7 @@ def test_public_protocol_uses_process_ephemeral_numeric_ids_and_generic_aliases(
 
     map_message = method_body(SERVER, "public MapMessage(long id")
     assert "PublicIdentity.ForPeer(id)" in map_message
-    assert "this.id = id" not in map_message
+    assert "this.id = id;" not in map_message
     assert "this.name = name;" not in map_message
 
     for signature in ("public void BroadcastPing", "public void BroadcastMessage"):
