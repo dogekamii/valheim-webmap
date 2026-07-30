@@ -29,6 +29,7 @@ jobs:
             {
               echo "exit=$rc"
               echo "command=$failed_command"
+              echo "phase=$(cat /tmp/pr8-sync-phase.txt 2>/dev/null || true)"
               echo "status:"
               git status --short || true
               echo "unmerged:"

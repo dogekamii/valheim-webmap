@@ -1,5 +1,11 @@
 from pathlib import Path
 
+
+def phase(name):
+    Path("/tmp/pr8-sync-phase.txt").write_text(name, encoding="utf-8")
+
+
+phase("webmap-version")
 webmap_path = Path("WebMap/WebMap.cs")
 webmap = webmap_path.read_text(encoding="utf-8-sig")
 old_version = 'public const string VERSION = "2.7.3";'
@@ -7,6 +13,7 @@ new_version = 'public const string VERSION = "2.7.4";'
 assert webmap.count(old_version) == 1
 webmap_path.write_text(webmap.replace(old_version, new_version), encoding="utf-8")
 
+phase("mapdata-class-marker")
 server_path = Path("WebMap/MapDataServer.cs")
 server = server_path.read_text(encoding="utf-8")
 class_marker = "    public class MapDataServer\n    {\n"
@@ -21,6 +28,7 @@ policy_block = """    public class MapDataServer
 assert server.count(class_marker) == 1
 assert "ContentSecurityPolicy" not in server
 server = server.replace(class_marker, policy_block)
+phase("mapdata-on-get-marker")
 on_get = """            httpServer.OnGet += (sender, e) =>
             {
                 if (ProcessSpecialRoutes(e)) return;
@@ -33,6 +41,7 @@ on_get_secured = """            httpServer.OnGet += (sender, e) =>
 """
 assert server.count(on_get) == 1
 server = server.replace(on_get, on_get_secured)
+phase("mapdata-method-marker")
 method_marker = "        public string getPlayerResponse(bool sendLast)\n"
 method_block = """        private static void ApplySecurityHeaders(HttpListenerResponse res)
         {
@@ -47,6 +56,7 @@ method_block = """        private static void ApplySecurityHeaders(HttpListenerR
 assert server.count(method_marker) == 1
 server_path.write_text(server.replace(method_marker, method_block), encoding="utf-8")
 
+phase("workflow-privacy-marker")
 workflow_path = Path(".github/workflows/tests.yml")
 workflow = workflow_path.read_text(encoding="utf-8")
 assert "Inspect packaged privacy boundaries" not in workflow
@@ -82,3 +92,4 @@ privacy_step = r'''      - name: Inspect packaged privacy boundaries
           PYPRIVACY
 '''
 workflow_path.write_text(workflow + privacy_step, encoding="utf-8")
+phase("complete")
