@@ -150,6 +150,13 @@ def test_add_pin_fails_at_pin_cap_before_reconciliation_or_identity_allocation()
     assert cap_check < reconcile < allocation < insertion
 
 
+def test_add_live_broadcast_cannot_reallocate_after_the_pin_lock_is_released():
+    add = method_body(SERVER, "public void AddPin")
+    assert add.count("PublicIdentity.TryForOwner") == 1
+    assert "TrySerializePublicPin(record" not in add
+    assert "SerializePublicPin(parsed, identity)" in add
+
+
 def test_identity_capacity_tracks_current_valid_retained_pin_owners():
     assert constant(SERVER, "MaxPublicIdentities") == constant(SERVER, "MaxPrivatePins")
     replace = method_body(SERVER, "public void ReplacePins")
