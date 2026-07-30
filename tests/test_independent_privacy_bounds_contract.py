@@ -4,7 +4,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = (ROOT / "WebMap" / "MapDataServer.cs").read_text(encoding="utf-8")
 CONFIG = (ROOT / "WebMap" / "Config.cs").read_text(encoding="utf-8")
-WEBMAP = (ROOT / "WebMap" / "WebMap.cs").read_text(encoding="utf-8")
 BROWSER_MAP = (ROOT / "WebMap" / "web-src" / "map.js").read_text(encoding="utf-8")
 
 
@@ -75,7 +74,8 @@ def test_private_pin_identity_snapshot_and_browser_work_share_a_total_cap():
 def test_failed_construction_or_server_start_cannot_publish_a_partial_singleton():
     constructor = method_body(SERVER, "public MapDataServer(WebMap owner)")
     assert constructor.index("owner.StartCoroutine") < constructor.index("__instance = this")
-    start = method_body(WEBMAP, "public void StartMapServerOnce")
+    start = method_body(SERVER, "public void ListenAsync")
     catch_body = start[start.index("catch"):]
-    assert "failedServer.Stop()" in catch_body
-    assert "mapDataServer = null" in catch_body
+    assert "Stop()" in catch_body
+    assert "WebMap.mapDataServer = null" in catch_body
+    assert "throw;" in catch_body

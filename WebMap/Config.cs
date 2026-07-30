@@ -29,6 +29,7 @@ namespace WebMap
         public static string DISCORD_INVITE_URL = "";
         public static string URL = "";
 
+        private const float MaxMapCoordinate = 12000f;
         private static readonly HashSet<string> WORLD_VISIBILITY_MODES = new HashSet<string> { "fogged", "hybrid", "full" };
 
         public static void ReadConfigFile(ConfigFile config)
@@ -106,13 +107,19 @@ namespace WebMap
             public string world_visibility_mode;
         }
 
+        private static float SanitizeMapCoordinate(float value)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value) || Math.Abs(value) > MaxMapCoordinate) return 0f;
+            return value;
+        }
+
         public static string MakeClientConfigJson(string mapDigest)
         {
             ClientConfig config = new ClientConfig
             {
                 map_digest = mapDigest ?? string.Empty,
-                world_start_x = WORLD_START_POS.x,
-                world_start_z = WORLD_START_POS.z,
+                world_start_x = SanitizeMapCoordinate(WORLD_START_POS.x),
+                world_start_z = SanitizeMapCoordinate(WORLD_START_POS.z),
                 default_zoom = DEFAULT_ZOOM,
                 texture_size = TEXTURE_SIZE,
                 pixel_size = PIXEL_SIZE,

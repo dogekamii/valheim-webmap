@@ -30,7 +30,8 @@ def test_map_route_requires_one_exact_valid_digest_and_fails_closed():
     assert "values.Length != 1" in routes
     assert "IsValidMapDigest" in routes
     assert "FixedTimeEquals" in routes
-    assert '"public, max-age=604800, immutable"' in routes
+    assert "SetImmutable(res)" in routes
+    assert '"public, max-age=604800, immutable"' in SERVER
     assert "SetNoStore" in routes
     assert "application/octet-stream" in routes
     assert "ContentLength64" in routes
@@ -91,5 +92,7 @@ def test_release_inspector_rejects_private_metadata_and_telemetry_protocols():
         "worldSeed", "password", "openServer", "publicServer", "world_name",
     ):
         assert token in INSPECTOR
+    assert "Game/framework TypeRef and MemberRef" in INSPECTOR
+    assert "harmless compiler metadata" in INSPECTOR
     assert "map_digest" in INSPECTOR
     assert "online" in INSPECTOR

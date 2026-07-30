@@ -24,6 +24,7 @@ namespace WebMap
 
     internal static class PublicIdentity
     {
+        internal const int MaxPublicIdentities = 5000;
         private const long MaxJavaScriptInteger = 9007199254740991L;
         private static readonly object Sync = new object();
         private static readonly Dictionary<string, PublicIdentityValue> Identities = new Dictionary<string, PublicIdentityValue>(StringComparer.Ordinal);
@@ -31,12 +32,14 @@ namespace WebMap
         private static readonly RandomNumberGenerator Generator = RandomNumberGenerator.Create();
         private static int nextAlias = 1;
 
-        internal static PublicIdentityValue ForOwner(string owner)
+        internal static bool TryForOwner(string owner, out PublicIdentityValue identity)
         {
+            identity = default(PublicIdentityValue);
+            if (owner == null) return false;
             lock (Sync)
             {
-                PublicIdentityValue existing;
-                if (Identities.TryGetValue(owner, out existing)) return existing;
+                if (Identities.TryGetValue(owner, out identity)) return true;
+                if (Identities.Count >= MaxPublicIdentities) return false;
                 long id;
                 byte[] bytes = new byte[8];
                 do
@@ -45,10 +48,10 @@ namespace WebMap
                     id = (long)(BitConverter.ToUInt64(bytes, 0) & (ulong)MaxJavaScriptInteger);
                 } while (id == 0 || !UsedIds.Add(id));
                 int aliasNumber = nextAlias++;
-                string Alias = $"Player {aliasNumber}";
-                PublicIdentityValue identity = new PublicIdentityValue(id, Alias);
+                string alias = $"Player {aliasNumber}";
+                identity = new PublicIdentityValue(id, alias);
                 Identities.Add(owner, identity);
-                return identity;
+                return true;
             }
         }
     }
@@ -87,6 +90,7 @@ namespace WebMap
         private const string ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
         private const string ImmutableCacheControl = "public, max-age=604800, immutable";
         private const int MaxPublicOnlineCount = 10000;
+        private const int MaxPrivatePins = 5000;
         private const int MaxPrivatePinRecordLength = 512;
         private const int MaxOwnerKeyLength = 128;
         private const int MaxPinIdLength = 64;
@@ -124,7 +128,6 @@ namespace WebMap
         public MapDataServer(WebMap owner)
         {
             this.owner = owner;
-            __instance = this;
             publicRoot = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty, "web");
             configSnapshot = Encoding.UTF8.GetBytes(MakeClientConfigJson(string.Empty));
             httpServer = new HttpServer(SERVER_PORT);
@@ -148,6 +151,7 @@ namespace WebMap
                 }
             };
             publicationCoroutine = owner.StartCoroutine(PublishSnapshotsOnMainThread());
+            __instance = this;
         }
 
         private static void ApplySecurityHeaders(HttpListenerResponse res)
@@ -268,8 +272,10 @@ namespace WebMap
                 case "/map":
                     MapPublication publication = mapPublication;
                     string[] values = req.QueryString.GetValues("v");
-                    if (publication == null || values == null || values.Length != 1 ||
-                        !IsValidMapDigest(values[0]) || !FixedTimeEquals(values[0], publication.Digest))
+                    if (publication == null || req.QueryString.Count != 1 ||
+                        !string.Equals(req.QueryString.AllKeys[0], "v", StringComparison.Ordinal) ||
+                        values == null || values.Length != 1 || !IsValidMapDigest(values[0]) ||
+                        !FixedTimeEquals(values[0], publication.Digest))
                     {
                         SetNoStore(res); res.StatusCode = 404; res.Close(); return true;
                     }
@@ -322,9 +328,18 @@ namespace WebMap
         public void Reload() => forceReload = true;
         public void ListenAsync()
         {
-            httpServer.Start();
-            if (httpServer.IsListening) ZLog.Log("WebMap: HTTP server started");
-            else ZLog.LogError("WebMap: HTTP server failed");
+            try
+            {
+                httpServer.Start();
+                if (!httpServer.IsListening) throw new InvalidOperationException();
+                ZLog.Log("WebMap: HTTP server started");
+            }
+            catch
+            {
+                Stop();
+                if (ReferenceEquals(WebMap.mapDataServer, this)) WebMap.mapDataServer = null;
+                throw;
+            }
         }
 
         public void PublishMap(byte[] bytes)
@@ -352,6 +367,7 @@ namespace WebMap
                 {
                     foreach (string pin in pins)
                     {
+                        if (privatePins.Count >= MaxPrivatePins) break;
                         string[] parsed;
                         if (TryParsePrivatePin(pin, out parsed)) privatePins.Add(pin);
                     }
@@ -407,7 +423,13 @@ namespace WebMap
             string record = $"{owner},{pinId},{type},,{FixedValue(position.x)},{FixedValue(position.z)},{pinText ?? string.Empty}";
             string[] parsed;
             if (!TryParsePrivatePin(record, out parsed)) return;
-            lock (pinSync) privatePins.Add(record);
+            lock (pinSync)
+            {
+                if (privatePins.Count >= MaxPrivatePins) return;
+                PublicIdentityValue identity;
+                if (!PublicIdentity.TryForOwner(parsed[0], out identity)) return;
+                privatePins.Add(record);
+            }
             PublishPinSnapshot();
             string publicPin;
             if (TrySerializePublicPin(record, out publicPin))
@@ -435,7 +457,7 @@ namespace WebMap
         {
             string[] source;
             lock (pinSync) source = privatePins.ToArray();
-            List<string> serialized = new List<string>();
+            List<string> serialized = new List<string>(Math.Min(source.Length, MaxPrivatePins));
             foreach (string pin in source)
             {
                 string publicPin;
@@ -496,7 +518,8 @@ namespace WebMap
             serialized = null;
             string[] pinParts;
             if (!TryParsePrivatePin(record, out pinParts) || pinParts.Length != 7) return false;
-            PublicIdentityValue identity = PublicIdentity.ForOwner(pinParts[0]);
+            PublicIdentityValue identity;
+            if (!PublicIdentity.TryForOwner(pinParts[0], out identity)) return false;
             serialized = string.Join(",", new[] { identity.Id.ToString(CultureInfo.InvariantCulture), pinParts[1], pinParts[2], identity.Alias, pinParts[4], pinParts[5], pinParts[6] });
             return true;
         }
