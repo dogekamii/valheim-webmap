@@ -19,7 +19,7 @@
 - Validate and clamp typed configuration values, keep test/debug independent, and exclude private server metadata from client configuration.
 - Make webhook startup inert when disabled, keep enabled work bounded, avoid sensitive error details, and complete cancellation and teardown deterministically.
 - Harden listener startup, HTTP failure handling, WebSocket reconnect/input behavior, Markdown image sources, and browser icon/timer cleanup.
-- Replace the previously documented flat four-file compiler output, which was not installable because runtime serves `web/index.html`, with deterministic `dist/valheim-webmap-2.7.4.zip`. The archive has one top-level `WebMap/` plugin directory and a closed allowlist containing the two runtime DLLs, dependency notice, required static asset graph, and one content-addressed browser bundle.
+- Replace the previously documented flat four-file compiler output, which was not installable because runtime serves `web/index.html`, with deterministic `dist/valheim-webmap-2.7.4.zip`. The archive has one top-level `WebMap/` plugin directory and a closed allowlist containing the two runtime DLLs, `THIRD-PARTY-NOTICES.txt`, the required static asset graph, and one content-addressed browser bundle.
 - Replace the opaque vendored websocket binary with a signed .NET 3.5 source build from immutable upstream commit `4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1`; hash-lock and safely extract the source archive, pin the Mono/xbuild toolchain, compile WebMap against that output, and report each release artifact hash.
 
 ## 2.7.3 — 2026-07-28
