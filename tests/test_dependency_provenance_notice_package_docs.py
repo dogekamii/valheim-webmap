@@ -1,15 +1,21 @@
-"""Release dependency provenance, notice, packaging, and documentation contracts."""
+"""Release dependency source provenance, notice, package, and docs contracts."""
 from pathlib import Path
 import hashlib
+import io
+import posixpath
 import re
 import shutil
 import subprocess
+import tarfile
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
-WEBSOCKET = ROOT / "libs" / "websocket-sharp.dll"
-EXPECTED_SIZE = 254464
-EXPECTED_SHA256 = "33c2b65512e71a0c05cbe1c2f89343605653e5f7fada91885ba756b12121b244"
-EXPECTED_BLOB = "140cbc4f926d622ec913791d319b7fb99f5d7e58"
+OPAQUE_WEBSOCKET = ROOT / "libs" / "websocket-sharp.dll"
+OPAQUE_SHA256 = "33c2b65512e71a0c05cbe1c2f89343605653e5f7fada91885ba756b12121b244"
+UPSTREAM_COMMIT = "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1"
+ARCHIVE_URL = f"https://codeload.github.com/sta/websocket-sharp/tar.gz/{UPSTREAM_COMMIT}"
+# Discovery RED: replace only after Actions reports the immutable archive digest.
+ARCHIVE_SHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
 NOTICE_NAME = "THIRD-PARTY-NOTICES.txt"
 MIT_NOTICE = """The MIT License (MIT)
 
@@ -34,43 +40,98 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE."""
 
 
-def test_repository_websocket_binary_is_cryptographically_pinned_and_documented():
-    data = WEBSOCKET.read_bytes()
-    assert len(data) == EXPECTED_SIZE
-    assert hashlib.sha256(data).hexdigest() == EXPECTED_SHA256
-    git_blob = hashlib.sha1(f"blob {len(data)}\0".encode() + data).hexdigest()
-    assert git_blob == EXPECTED_BLOB
+class RejectRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, new_url):
+        raise AssertionError(f"archive redirect rejected: {code} {new_url}")
 
-    provenance = (ROOT / "docs" / "DEPENDENCY_PROVENANCE.md").read_text(encoding="utf-8")
+
+def test_discover_and_validate_the_exact_immutable_upstream_archive():
+    request = urllib.request.Request(
+        ARCHIVE_URL,
+        headers={"Accept": "application/x-gzip", "User-Agent": "valheim-webmap-provenance-test"},
+    )
+    with urllib.request.build_opener(RejectRedirects).open(request, timeout=60) as response:
+        assert response.status == 200
+        assert response.geturl() == ARCHIVE_URL
+        assert response.headers.get_content_type() in {
+            "application/x-gzip", "application/gzip", "application/octet-stream"
+        }
+        archive = response.read()
+    digest = hashlib.sha256(archive).hexdigest()
+    assert digest == ARCHIVE_SHA256, f"exact upstream archive sha256={digest}"
+    expected_root = f"websocket-sharp-{UPSTREAM_COMMIT}"
+    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as source:
+        for member in source.getmembers():
+            normalized = posixpath.normpath(member.name)
+            assert not member.name.startswith("/")
+            assert normalized != ".." and not normalized.startswith("../")
+            assert normalized == expected_root or normalized.startswith(expected_root + "/")
+            assert not member.issym() and not member.islnk()
+        assert source.getmember(f"{expected_root}/websocket-sharp/websocket-sharp.csproj").isfile()
+        assert source.getmember(f"{expected_root}/LICENSE.txt").isfile()
+
+
+def test_opaque_repository_dll_is_not_a_canonical_dependency_input():
+    assert not OPAQUE_WEBSOCKET.exists()
+
+
+def test_docker_image_acquires_only_the_exact_hash_locked_source_archive():
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     for required in (
-        "websocket-sharp.dll", "1.0.2.29017", str(EXPECTED_SIZE), EXPECTED_SHA256,
-        EXPECTED_BLOB, "5e5c3361fdac8926f62349bb352cd95c8951f1e9", "2021-04-09",
-        "Kyle Paulsen", "https://github.com/sta/websocket-sharp",
-        "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1", "MIT",
+        ARCHIVE_URL, ARCHIVE_SHA256, "sha256sum --check --strict", "--max-redirs 0",
+        "application/x-gzip", "websocket-sharp/websocket-sharp.csproj", "tarfile.open",
+        "member.issym()", "member.islnk()", "mono-devel",
     ):
-        assert required in provenance
-    assert re.search(r"exact binary-to-source(?:-commit|-build) provenance[^.]*unverified", provenance, re.I)
-    assert "built from 4cbd1e0" not in provenance
+        assert required in dockerfile
+    assert "github.com/sta/websocket-sharp/archive/refs/heads" not in dockerfile
+    assert "github.com/sta/websocket-sharp/archive/refs/tags" not in dockerfile
 
 
-def test_required_third_party_notice_contains_the_complete_upstream_notice_and_caveat():
+def test_source_build_precedes_webmap_and_package_proves_artifact_continuity():
+    build = (ROOT / "build.cake").read_text(encoding="utf-8")
+    project = (ROOT / "WebMap" / "WebMap.csproj").read_text(encoding="utf-8")
+    packager = (ROOT / "scripts" / "package-release.js").read_text(encoding="utf-8")
+    inspector = (ROOT / "scripts" / "inspect-release-privacy.sh").read_text(encoding="utf-8")
+    source_task = build.index('Task("BuildWebsocketSharp")')
+    source_command = build.index("xbuild", source_task)
+    webmap_build = build.index('DotNetBuild("./WebMap/WebMap.csproj"')
+    package = build.index("scripts/package-release.js", webmap_build)
+    inspect = build.index("scripts/inspect-release-privacy.sh", package)
+    assert source_task < source_command < webmap_build < package < inspect
+    assert "websocket-sharp-build" in project
+    assert "libs\\websocket-sharp.dll" not in project
+    assert "sourceBuiltDependency" in packager
+    assert "source-built websocket-sharp.dll does not match" in packager
+    assert "cmp -s" in inspector
+    assert OPAQUE_SHA256 in inspector
+    assert "must not match removed opaque repository DLL" in inspector
+    assert "1.0.2.29017" in inspector
+    assert "5660b08a1845a91e" in inspector
+
+
+def test_required_notice_records_the_source_build_and_complete_mit_license():
     notice = (ROOT / NOTICE_NAME).read_text(encoding="utf-8")
-    assert "https://github.com/sta/websocket-sharp" in notice
-    assert "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1" in notice
+    for required in (
+        "https://github.com/sta/websocket-sharp", UPSTREAM_COMMIT, ARCHIVE_URL,
+        ARCHIVE_SHA256, "websocket-sharp/websocket-sharp.csproj", "xbuild", "MIT",
+    ):
+        assert required in notice
     assert MIT_NOTICE in notice
-    assert re.search(r"exact binary-to-source(?:-commit|-build) provenance[^.]*unverified", notice, re.I)
-    assert "built from 4cbd1e0" not in notice
+    assert "unverified" not in notice.lower()
+    assert "built from" in notice.lower()
 
 
-def test_release_packager_emits_only_the_four_allowed_files_and_hashes_the_real_dll(tmp_path):
+def test_release_packager_accepts_only_the_current_source_built_dependency(tmp_path):
     script = ROOT / "scripts" / "package-release.js"
-    assert script.is_file(), "the canonical release packager is required"
     output = tmp_path / "package"
     web = tmp_path / "web"
+    source = tmp_path / "source-build" / "websocket-sharp.dll"
     output.mkdir()
     web.mkdir()
+    source.parent.mkdir()
+    source.write_bytes(b"new source-built signed assembly")
     (output / "WebMap.dll").write_bytes(b"compiled plugin")
-    shutil.copy2(WEBSOCKET, output / "websocket-sharp.dll")
+    shutil.copy2(source, output / "websocket-sharp.dll")
     (output / "WebMap.pdb").write_bytes(b"private symbols")
     (output / "private.cfg").write_text("private", encoding="utf-8")
     (output / "nested").mkdir()
@@ -78,29 +139,33 @@ def test_release_packager_emits_only_the_four_allowed_files_and_hashes_the_real_
     (web / "main.0123456789abcdef.js").write_text("console.log('bundle')", encoding="utf-8")
 
     subprocess.run(
-        ["node", str(script), str(output), str(web), str(ROOT / NOTICE_NAME)],
+        ["node", str(script), str(output), str(web), str(ROOT / NOTICE_NAME), str(source)],
         cwd=ROOT, check=True, capture_output=True, text=True,
     )
 
     files = sorted(path.name for path in output.iterdir())
     assert files == [NOTICE_NAME, "WebMap.dll", "main.0123456789abcdef.js", "websocket-sharp.dll"]
-    assert hashlib.sha256((output / "websocket-sharp.dll").read_bytes()).hexdigest() == EXPECTED_SHA256
-    packaged_notice = (output / NOTICE_NAME).read_text(encoding="utf-8")
-    assert "Permission is hereby granted" in packaged_notice
-    assert 'THE SOFTWARE IS PROVIDED "AS IS"' in packaged_notice
+    assert (output / "websocket-sharp.dll").read_bytes() == source.read_bytes()
+
+    (output / "websocket-sharp.dll").write_bytes(b"fallback prebuilt binary")
+    rejected = subprocess.run(
+        ["node", str(script), str(output), str(web), str(ROOT / NOTICE_NAME), str(source)],
+        cwd=ROOT, capture_output=True, text=True,
+    )
+    assert rejected.returncode != 0
+    assert "source-built websocket-sharp.dll does not match" in rejected.stderr
 
 
-def test_release_build_runs_packaging_and_privacy_inspection_with_a_closed_allowlist():
-    build = (ROOT / "build.cake").read_text(encoding="utf-8")
-    inspector = (ROOT / "scripts" / "inspect-release-privacy.sh").read_text(encoding="utf-8")
-    build_start = build.index('DotNetBuild("./WebMap/WebMap.csproj"')
-    package_start = build.index("scripts/package-release.js", build_start)
-    inspect_start = build.index("scripts/inspect-release-privacy.sh", package_start)
-    assert build_start < package_start < inspect_start
-    for required in (NOTICE_NAME, EXPECTED_SHA256, "main.[0-9a-f]{16}.js", "exactly four"):
-        assert required in inspector
-    assert "find \"$output\" -mindepth 1 -maxdepth 1" in inspector
-    assert "expected exactly two DLLs" in inspector
+def test_provenance_docs_lock_source_toolchain_command_identity_and_artifact_reporting():
+    provenance = (ROOT / "docs" / "DEPENDENCY_PROVENANCE.md").read_text(encoding="utf-8")
+    for required in (
+        UPSTREAM_COMMIT, ARCHIVE_URL, ARCHIVE_SHA256, "MIT",
+        "websocket-sharp/websocket-sharp.csproj", "mono-devel", "xbuild",
+        "1.0.2.29017", "5660b08a1845a91e", OPAQUE_SHA256,
+        "artifact SHA-256", "not byte-reproducible",
+    ):
+        assert required.lower() in provenance.lower()
+    assert "exact binary-to-source-build provenance remains unverified" not in provenance.lower()
 
 
 def test_readme_describes_the_aggregate_only_public_contract_and_private_optional_features():
@@ -119,12 +184,13 @@ def test_readme_describes_the_aggregate_only_public_contract_and_private_optiona
     assert "activity and linking do not select an rsvp presence policy" in readme.lower()
 
 
-def test_changelog_274_records_the_candidate_without_removed_route_claims():
+def test_changelog_274_records_source_build_without_removed_route_claims():
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     section = changelog.split("## 2.7.4", 1)[1].split("## 2.7.3", 1)[0].lower()
     for required in (
         "aggregate-only", "per-player", "chat", "ping", "pin", "bound", "map digest",
         "cache", "headers", "config", "webhook", "main thread", "teardown", NOTICE_NAME.lower(),
+        "source", "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1",
     ):
         assert required in section
     assert "/messages" not in section
