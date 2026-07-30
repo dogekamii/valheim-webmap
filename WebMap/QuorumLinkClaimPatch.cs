@@ -12,6 +12,7 @@ namespace WebMap
             RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly int IgnoredLinkClaimMethodHash = "DestroyZDO".GetStableHashCode();
 
+        [HarmonyPriority(Priority.First)]
         private static bool Prefix(ref ZRoutedRpc.RoutedRPCData data)
         {
             if (!WebMapConfig.QUORUM_ACTIVITY_JOURNAL_ENABLED)

@@ -4,17 +4,23 @@
 
 ## 2.7.4 — 2026-07-30
 
-### Security
+### Security and privacy
 
-- Restrict chat-rendered image sources to same-origin relative paths while preserving safe clickable links.
-- Apply MIME sniffing, referrer, frame, and same-origin Content Security Policy headers to every HTTP response path.
-- Set quorum journals to `0640` after opening and before writing, preserving fail-closed writes while granting the designated AMP group read access.
-- Pin GitHub Actions to reviewed commits, use read-only workflow permissions, and avoid duplicate feature-branch push runs.
+- Remove public per-player records, positions, names, chat and message telemetry, and ping telemetry; the presence protocol now publishes an aggregate-only online count.
+- Keep intentional public pins while replacing internal owner values with process-ephemeral aliases and JavaScript-safe IDs; validate private pin records and bound retained pins, owner mappings, coordinates, IDs, types, and text.
+- Remove seed, internal world-name, open/public flag, server-info, and private endpoint/path metadata from public runtime and browser output.
+- Apply no-store or immutable cache policy as appropriate, MIME-sniffing, referrer, frame, and same-origin Content Security Policy headers across normal, static, and error responses.
+- Minimize the optional private quorum activity journal and link-claim records, set journal permissions before the first write, and keep activity/linking independent from downstream RSVP policy.
 
 ### Fixed
 
-- Minimize new quorum join/leave records, remove visitor endpoint logging, correct the `/messages` media type, and bind the test setting independently from debug.
-- Keep only `WebMap.dll` and `websocket-sharp.dll` in the release payload and refresh audited npm dependencies.
+- Publish aggregate, fog, pin, and configuration snapshots from the main thread; bound WebSocket input, pin/browser work, webhook queues and timeouts, and identity churn.
+- Require a content-addressed map digest, fixed-time digest comparison, one 16-lowercase-hex browser bundle, and cache-safe HTML/map behavior.
+- Validate and clamp typed configuration values, keep test/debug independent, and exclude private server metadata from client configuration.
+- Make webhook startup inert when disabled, keep enabled work bounded, avoid sensitive error details, and complete cancellation and teardown deterministically.
+- Harden listener startup, HTTP failure handling, WebSocket reconnect/input behavior, Markdown image sources, and browser icon/timer cleanup.
+- Replace the previously documented flat four-file compiler output, which was not installable because runtime serves `web/index.html`, with deterministic `dist/valheim-webmap-2.7.4.zip`. The archive has one top-level `WebMap/` plugin directory and a closed allowlist containing the two runtime DLLs, `THIRD-PARTY-NOTICES.txt`, the required static asset graph, and one content-addressed browser bundle.
+- Replace the opaque vendored websocket binary with a signed .NET 3.5 source build from immutable upstream commit `4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1`; hash-lock and safely extract the source archive, pin the Mono/xbuild toolchain, compile WebMap against that output, and report each release artifact hash.
 
 ## 2.7.3 — 2026-07-28
 

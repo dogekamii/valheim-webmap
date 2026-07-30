@@ -2,221 +2,83 @@ import constants from "./constants";
 import websocket from "./websocket";
 import map from "./map";
 import players from "./players";
-import ui, { createUi } from "./ui";
+import ui from "./ui";
 import { normalizeWorldVisibilityMode } from "./visibility";
 
+const MAX_PIN_RESPONSE_LENGTH = 1024 * 1024;
+const MAX_PIN_ROWS = 5000;
 const mapImage = document.createElement('img');
 const fogImage = document.createElement('img');
 
-const fetchMap = () => new Promise((res) => {
-    fetch('map').then(res => res.blob()).then((mapBlob) => {
-        mapImage.onload = res;
-        mapImage.src = URL.createObjectURL(mapBlob);
-    });
+const boundedNumber = (value, fallback, minimum, maximum) => (
+    Number.isFinite(value) ? Math.min(maximum, Math.max(minimum, value)) : fallback
+);
+const loadImage = (image, source) => new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = reject;
+    image.src = source;
 });
-
-const fetchFog = () => new Promise((res) => {
-    fogImage.onload = res;
-    fogImage.src = 'fog';
-});
-
 const createStyleSheet = (styles = '') => {
-    const style = document.createElement("style");
+    const style = document.createElement('style');
     style.appendChild(document.createTextNode(styles));
     document.head.appendChild(style);
-    return style.sheet;
 };
 
-const parseVector3 = str => {
-    const strParts = str.split(',');
-    return {
-        x: parseFloat(strParts[0]),
-        y: parseFloat(strParts[1]),
-        z: parseFloat(strParts[2]),
-    };
-};
-
-const fetchConfig = fetch('config').then(res => res.json()).then(config => {
-    constants.CANVAS_WIDTH = config.texture_size || 2048;
-    constants.CANVAS_HEIGHT = config.texture_size || 2048;
-    constants.PIXEL_SIZE = config.pixel_size || 12;
-    constants.EXPLORE_RADIUS = config.explore_radius || 100;
-    constants.UPDATE_INTERVAL = config.update_interval || 0.5;
-    constants.WORLD_NAME = config.world_name;
-    constants.WORLD_START_POSITION = parseVector3(config.world_start_pos);
-    constants.DEFAULT_ZOOM = config.default_zoom || 200;
-    constants.MAX_MESSAGES = config.max_messages || 100;
-    constants.ALWAYS_MAP = config.always_map;
-    constants.ALWAYS_VISIBLE = config.always_visible;
+const fetchConfig = async () => {
+    const response = await fetch('config', { cache: 'no-store' });
+    if (!response.ok) throw new Error('configuration unavailable');
+    const config = await response.json();
+    if (!config || typeof config.map_digest !== 'string' || !/^[0-9a-f]{64}$/.test(config.map_digest)) throw new Error('map unavailable');
+    constants.CANVAS_WIDTH = Math.round(boundedNumber(config.texture_size, 2048, 256, 2048));
+    constants.CANVAS_HEIGHT = constants.CANVAS_WIDTH;
+    constants.COORD_OFFSET = constants.CANVAS_WIDTH / 2;
+    constants.PIXEL_SIZE = boundedNumber(config.pixel_size, 12, 2, 100);
+    constants.EXPLORE_RADIUS = boundedNumber(config.explore_radius, 100, 0, 500);
+    constants.UPDATE_INTERVAL = boundedNumber(config.update_interval, 1, 0.25, 60);
+    constants.DEFAULT_ZOOM = Math.round(boundedNumber(config.default_zoom, 100, 50, 800));
+    constants.ALWAYS_MAP = config.always_map === true;
+    constants.ALWAYS_VISIBLE = config.always_visible === true;
     constants.WORLD_VISIBILITY_MODE = normalizeWorldVisibilityMode(config.world_visibility_mode);
-    document.title = `Valheim WebMap - ${constants.WORLD_NAME}`;
-    createStyleSheet(`
-		.mapIcon.player {
-			transition: top ${constants.UPDATE_INTERVAL}s linear, left ${constants.UPDATE_INTERVAL}s linear;
-		}
-		.map.smooth {
-			transition: top ${constants.UPDATE_INTERVAL}s linear, left ${constants.UPDATE_INTERVAL}s linear;
-		}
-	`);
-});
+    const startX = boundedNumber(config.world_start_x, 0, -12000, 12000);
+    const startZ = boundedNumber(config.world_start_z, 0, -12000, 12000);
+    document.title = 'Valheim WebMap';
+    createStyleSheet(`.map.smooth { transition: top ${constants.UPDATE_INTERVAL}s linear, left ${constants.UPDATE_INTERVAL}s linear; }`);
+    return { mapDigest: config.map_digest, startX, startZ };
+};
+
+const loadPins = async () => {
+    const response = await fetch('pins', { cache: 'no-store' });
+    if (!response.ok) return;
+    const text = await response.text();
+    if (text.length > MAX_PIN_RESPONSE_LENGTH) return;
+    text.split('\n', MAX_PIN_ROWS).forEach(line => {
+        if (!line || line.length > 512) return;
+        const parts = line.split(',');
+        if (parts.length !== 7) return;
+        const x = Number(parts[4]);
+        const z = Number(parts[5]);
+        if (!Number.isFinite(x) || !Number.isFinite(z) || Math.abs(x) > 12000 || Math.abs(z) > 12000) return;
+        map.addIcon({ id: parts[1], type: parts[2], x, z, text: parts[6], static: true }, false);
+    });
+    map.updateIcons();
+};
 
 const setup = async () => {
-    await Promise.all([
-        fetchMap(),
-        fetchFog(),
-        fetchConfig
-    ]);
-
-    map.init({
-        mapImage,
-        fogImage,
-        zoom: constants.DEFAULT_ZOOM,
-        visibilityMode: constants.WORLD_VISIBILITY_MODE
-    });
-
-    map.addIcon({
-        type: 'start',
-        x: constants.WORLD_START_POSITION.x,
-        z: constants.WORLD_START_POSITION.z,
-        static: true
-    });
-
-    const pings = {};
-
-    websocket.addActionListener('ping', (ping) => {
-        let mapIcon = pings[ping.playerId];
-        if (!mapIcon) {
-            mapIcon = { ...ping };
-            mapIcon.type = 'ping';
-            mapIcon.text = ping.name;
-            map.addIcon(mapIcon, false);
-            pings[ping.playerId] = mapIcon;
-        }
-        mapIcon.x = ping.x;
-        mapIcon.z = ping.z;
-        map.updateIcons();
-
-        clearTimeout(mapIcon.timeoutId);
-        mapIcon.timeoutId = setTimeout(() => {
-            delete pings[ping.playerId];
-            map.removeIcon(mapIcon);
-        }, 8000);
-    });
-
-    fetch('pins').then(res => res.text()).then(text => {
-        const lines = text.split('\n');
-        lines.forEach(line => {
-            const lineParts = line.split(',');
-            if (lineParts.length > 5) {
-                const pin = {
-                    id: lineParts[1],
-                    uid: lineParts[0],
-                    type: lineParts[2],
-                    name: lineParts[3],
-                    x: lineParts[4],
-                    z: lineParts[5],
-                    text: lineParts[6],
-                    static: true
-                };
-                map.addIcon(pin, false);
-            }
-        });
-        map.updateIcons();
-    });
-
-    websocket.addActionListener('pin', (pin) => {
-        map.addIcon(pin);
-    });
-
-    websocket.addActionListener('rmpin', (pinid) => {
-        map.removeIconById(pinid);
-    });
-
-    const tempTable = document.createElement('table');
-    websocket.addActionListener('messages', (messages) => {
-        messages.forEach((message) => {
-            const messageEntry = createUi(`
-		<tr class="message">
-		    <td class="datetime">
-		        <span class="date" data-id="date"></span>
-		        <span class="time" data-id="time"></span>
-		    </td>
-		    <td class="name" data-id="name"></td>
-		    <td class="text" data-id="message"></td>
-		</tr>
-            `, tempTable);
-
-            var messageDate = new Date(message.ts);
-            messageEntry.ui.date.textContent = messageDate.toLocaleDateString();
-            messageEntry.ui.time.textContent = messageDate.toLocaleTimeString();
-            messageEntry.ui.name.textContent = message.name;
-            messageEntry.ui.message. innerHTML = markdown(message.message);
-            if (message.name == "Server") {
-                messageEntry.el.firstChild.classList.add("server");
-            }
-            messageEntry.el.firstChild.classList.add("type" + message.type);
-            ui.messageList.appendChild(messageEntry.el.firstChild);
-        });
-        while (document.getElementById('messages').childElementCount > constants.MAX_MESSAGES) {
-            document.getElementById('messages').childNodes[0].remove();
-        }
-    });
-
-    fetch('messages').then(resp => resp.json()).then(messages => {
-        if (messages.length > 0) {
-            websocket.getActionListeners('messages').forEach(func => {
-                func(messages);
-            });
-        }
-    });
-
-    window.addEventListener('resize', () => {
-        map.update();
-    });
-
-    ui.menuBtn.addEventListener('click', () => {
-        ui.menu.classList.toggle('menuOpen');
-    });
-
-    const closeMenu = (e) => {
-        const inMenu = e.target.closest('.menu');
-        const inMenuBtn = e.target.closest('.menu-btn');
-        if (!inMenu && !inMenuBtn) {
-            ui.menu.classList.remove('menuOpen');
-        }
-    };
-    window.addEventListener('mousedown', closeMenu);
-    window.addEventListener('touchstart', closeMenu);
-
+    const config = await fetchConfig();
+    await Promise.all([loadImage(mapImage, `map?v=${encodeURIComponent(config.mapDigest)}`), loadImage(fogImage, 'fog')]);
+    map.init({ mapImage, fogImage, zoom: constants.DEFAULT_ZOOM, visibilityMode: constants.WORLD_VISIBILITY_MODE });
+    map.addIcon({ id: 'start', type: 'start', x: config.startX, z: config.startZ, text: '', static: true });
+    await loadPins();
+    websocket.addActionListener('pin', pin => map.addIcon(pin));
+    websocket.addActionListener('rmpin', pinId => map.removeIconById(pinId));
+    window.addEventListener('resize', () => map.update());
+    ui.menuBtn.addEventListener('click', () => ui.menu.classList.toggle('menuOpen'));
     const hideCheckboxes = ui.menu.querySelectorAll('.hideIconTypeCheckbox');
-    hideCheckboxes.forEach(el => {
-        el.addEventListener('change', () => {
-            map.setIconTypeHidden(el.dataset.hide, el.checked || ui.hideAll.checked);
-            if (el.dataset.hide === 'all') {
-                hideCheckboxes.forEach(el2 => {
-                    map.setIconTypeHidden(el2.dataset.hide, el.checked || el2.checked);
-                });
-            }
-            map.updateIcons();
-        });
-    });
-
-    ui.hideMessageList.addEventListener('change', () => {
-        if (ui.hideMessageList.checked) {
-            ui.messageList.style.left = -ui.messageList.offsetWidth + 'px';
-        } else {
-            ui.messageList.style.left = 0;
-        }
-    });
-
-    ui.hidePlayerList.addEventListener('change', () => {
-        if (ui.hidePlayerList.checked) {
-            ui.playerListContainer.style.right = -ui.playerListContainer.offsetWidth + 'px';
-        } else {
-            ui.playerListContainer.style.right = 0;
-        }
-    });
-
+    hideCheckboxes.forEach(element => element.addEventListener('change', () => {
+        map.setIconTypeHidden(element.dataset.hide, element.checked || ui.hideAll.checked);
+        if (element.dataset.hide === 'all') hideCheckboxes.forEach(other => map.setIconTypeHidden(other.dataset.hide, element.checked || other.checked));
+        map.updateIcons();
+    }));
     players.init();
     websocket.init();
 };

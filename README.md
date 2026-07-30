@@ -1,18 +1,22 @@
 # Valheim WebMap
 
-A **server-side** Valheim dedicated-server mod that publishes a live browser map with player positions, exploration, pings, and shared pins. Players use unmodded clients — no client mod is required.
+A **server-side** Valheim dedicated-server mod that publishes a browser map without exposing a viewer-facing player roster or per-player telemetry. Players use unmodded clients; no client mod is required.
+
+The public WebMap contains terrain and fog according to the server owner's visibility policy, an aggregate online count, and intentional map pins. Pins deliberately disclose their coordinates and text, together with process-ephemeral owner aliases and JavaScript-safe numeric IDs. Those aliases are convenience labels for one server process, **not durable anonymity** and not a promise that pin text or coordinates cannot identify their author.
 
 > [!IMPORTANT]
-> **Current-Valheim compatibility baseline:** WebMap **v2.7.4** targets **Valheim Dedicated Server `l-0.221.12`** (Steam build **`21981590`**, network version **36**) on Linux with BepInExPack Valheim **5.4.2333** and a crossplay-enabled AMP instance. The underlying runtime path was tested successfully on **2026-07-27**; the v2.7.4 security and packaging delta is CI-verified but has not been deployed. Newer Valheim builds should be validated before production rollout.
+> **Current-Valheim compatibility baseline:** WebMap **v2.7.4** targets **Valheim Dedicated Server `l-0.221.12`** (Steam build **`21981590`**, network version **36**) on Linux with BepInExPack Valheim **5.4.2333** and a crossplay-enabled AMP instance. The underlying runtime path was tested successfully on **2026-07-27**; the v2.7.4 security, privacy, and packaging candidate is CI-verified but has not been deployed. Validate newer Valheim builds before production rollout.
 
 ## Features
 
-- Explorable world map in a desktop or mobile browser.
-- Live player positions for players who enable **Visible to other players** in Valheim's in-game map settings.
-- In-game pings shown on the browser map.
-- Player-created shared pins via in-game chat commands.
-- Connected-player list, auto-follow, and connect/chat messages.
-- Optional Discord server-status and player join/leave notifications.
+- Explorable terrain map in a desktop or mobile browser.
+- Owner-controlled `fogged`, `hybrid`, and `full` terrain/fog visibility policy.
+- Aggregate online count with no connected-player roster or per-player records.
+- Intentional shared map pins with bounded coordinates and text, process-ephemeral aliases, and JavaScript-safe IDs.
+- Pin creation and removal through in-game commands.
+- Optional Discord status webhook and private quorum integration; neither expands the public viewer protocol.
+
+The viewer protocol does **not** publish positions, pings, chat/messages, a roster, player names, health, PvP, bed, or death state. It also excludes the world seed, internal world name, server open/public flags, and private endpoints or filesystem locations.
 
 ![WebMap screenshot](screenshot.webp)
 
@@ -27,79 +31,72 @@ A **server-side** Valheim dedicated-server mod that publishes a live browser map
 | Loader | BepInExPack Valheim `5.4.2333` |
 | Server mode | Linux dedicated server, crossplay enabled |
 
-The v2.7.4 source candidate retains the guarded current-Valheim world-setup listener startup, owner-controlled `fogged`, `hybrid`, and `full` map visibility, and cache-fresh fingerprinted JavaScript bundles. It also hardens browser rendering and HTTP headers, minimizes quorum journal records, and enforces a two-DLL release payload. No tag or release is implied by source metadata alone.
+The v2.7.4 source candidate retains guarded current-Valheim world-setup startup, content-addressed map and browser assets, bounded configuration, hardened HTTP responses, and deterministic teardown. No tag or release is implied by source metadata alone.
 
 ## Installation
 
-1. Install a Valheim-compatible BepInEx loader. For current AMP Valheim templates, use **BepInExPack Valheim** and preserve AMP's Doorstop/environment configuration.
-2. Copy the release `WebMap` directory into the dedicated server's plugin directory:
+The canonical source-build command creates `dist/valheim-webmap-2.7.4.zip`. `WebMap/bin/Release/net48/` is compiler staging output, not the release product.
 
-   ```text
-   <Valheim dedicated server>/BepInEx/plugins/WebMap
-   ```
+1. Install a Valheim-compatible BepInEx loader. For the validated AMP baseline, use BepInExPack Valheim and preserve the host's Doorstop/environment configuration.
+2. Obtain the canonical v2.7.4 ZIP and verify its published SHA-256, size, and member list from the authoritative release job.
+3. Stop the dedicated server. Extract the archive into `BepInEx/plugins/`; it contains one top-level `WebMap/` plugin directory with `WebMap.dll`, source-built `websocket-sharp.dll`, `THIRD-PARTY-NOTICES.txt`, and the required `web/` tree. Preserve that layout because the runtime resolves `web/index.html` beside `WebMap.dll`.
+4. Do not add PDBs, configuration files, saved `map_data`, stale bundles, source files, or additional DLLs to the plugin directory.
+5. Start the server once so it creates operator configuration, then stop it before editing settings. Runtime edits can be overwritten during shutdown.
+6. Restrict the raw listener to a trusted network. For any public exposure, use an **HTTPS reverse proxy** that forwards normal HTTP and WebSocket upgrades. Do not expose the raw listener directly to the Internet.
 
-3. Start the server once. WebMap creates its configuration file at:
-
-   ```text
-   <Valheim dedicated server>/BepInEx/config/com.github.h0tw1r3.valheim.webmap.cfg
-   ```
-
-4. Stop the server before changing configuration. Edit the file, then start the server again. Configuration changes made while the server runs can be overwritten on shutdown.
-5. By default, browse to `http://<server-ip>:3000` from a permitted network. For public access, put WebMap behind an HTTPS reverse proxy; do **not** expose the raw listener directly to the Internet.
+See [reverse-proxy guidance](docs/REVERSE_PROXY.md) for an example that does not disclose deployment-specific addresses.
 
 ### Multiple server instances on one host
 
-Every running Valheim/WebMap instance must use a distinct `server_port`. Set this under the `[Server]` section of its generated configuration file:
-
-```ini
-[Server]
-server_port = 3001
-```
-
-The default is `3000`. A reverse proxy should pass both ordinary HTTP traffic and WebSocket upgrades to the selected backend port.
+Every running Valheim/WebMap instance must use a distinct `server_port`. The default is `3000`. Configure a different valid port per instance, and point the reverse proxy at the intended backend. Never publish private backend addresses in documentation or support logs.
 
 ### Map visibility policy
 
-The server owner controls browser-map visibility with this generated configuration value:
+The owner selects one of these browser-map policies:
 
-```ini
-[World]
-## Controls the browser map fog. Valid values are fogged, hybrid, and full.
-world_visibility_mode = fogged
-```
+- `fogged` — default; explored areas are visible and unexplored terrain remains covered.
+- `hybrid` — retains exploration fog while showing generated terrain faintly underneath.
+- `full` — shows the full generated terrain map without the fog overlay.
 
-- `fogged` — **default** and legacy behavior: explored areas are visible and all other areas remain fogged.
-- `hybrid` — keeps the exploration fog, while showing the server-generated terrain map faintly underneath it.
-- `full` — hides the fog overlay and shows the full generated map.
+This is an owner policy, not a viewer preference. It controls terrain/fog visibility only; it does not enable per-player telemetry.
 
-This policy is sent by the server in its configuration response and is not exposed as a viewer preference or UI toggle. Restart WebMap after changing it.
+### Optional private quorum activity and linking
+
+The private quorum activity journal is disabled by default. When an operator explicitly enables it, join/leave activity and private link-claim events are appended for a separately operated integration. Link-claim material is minimized before storage. These records are not served by WebMap and must remain access-controlled; examples intentionally omit identifiers, digests, and deployment paths.
+
+Activity collection, account linking, and RSVP eligibility are separate concerns. **Activity and linking do not select an RSVP presence policy**: a downstream operator must define eligibility independently, and this project does not choose between an any-presence rule and a duration threshold.
 
 ## Updating
 
-1. Back up the server's `BepInEx/plugins/WebMap` directory and any map data before replacing files.
-2. Replace the plugin directory with the new release payload.
-3. Restart the dedicated server and confirm the WebMap listener is present in `BepInEx/LogOutput.log`.
-4. If the UI appears stale, hard-refresh or clear the browser cache.
+1. Stop the dedicated server and back up operator configuration and map state outside `BepInEx/plugins/WebMap/`.
+2. Verify the replacement ZIP's SHA-256, size, and complete member list. Verify that its `websocket-sharp.dll` matches the source-built artifact facts published by the authoritative release job and [dependency provenance](docs/DEPENDENCY_PROVENANCE.md).
+3. Remove the previous `BepInEx/plugins/WebMap/` directory, then extract the complete replacement ZIP into `BepInEx/plugins/`. Do not preserve an unhashed `main.js`, stale hashed bundles, PDBs, extra DLLs, generated configuration, private data, or files omitted from the archive allowlist.
+4. Restart the dedicated server and confirm startup through the ordinary BepInEx log without publishing private endpoints or paths.
+5. Confirm the HTTPS entrypoint and WebSocket upgrade through the reverse proxy. A hard refresh should retrieve the current content-addressed bundle.
 
-## Chat commands
+## Pin commands
 
 Press `Enter` to open Valheim chat. Commands are not case-sensitive.
 
-- `!pin` — place a dot pin at your current position.
+- `!pin` — place a dot pin at the current position.
 - `!pin my pin name` — place a named dot pin.
-- `!pin [pin-type] [text]` — create `dot`, `fire`, `mine`, `house`, or `cave` pins. Example: `!pin house my awesome base`
-- `!undoPin` — delete your most recent pin.
-- `!deletePin [text]` — delete the most recent pin whose text matches exactly.
+- `!pin [pin-type] [text]` — create a `dot`, `fire`, `mine`, `house`, or `cave` pin.
+- `!undoPin` — delete the caller's most recent pin.
+- `!deletePin [text]` — delete the caller's most recent exact-text match.
 
-The server configuration controls the maximum number of pins per player; older pins are removed if the limit is exceeded.
+Pins are intentional public map content. Avoid entering personal information or sensitive locations in pin text. The server bounds coordinates, text, retained records, and per-owner pin count.
 
-## Security
+## Security and privacy
 
-A WebMap instance exposes player positions, exploration state, and shared pins to anyone who can reach it. Restrict network reachability deliberately and use reverse-proxy authentication and HTTPS before public publication.
+WebMap follows an **aggregate-only privacy model** for presence: a reachable viewer receives only the total online count, never one record per connected player. The service does not expose names, positions, pings, messages, health/PvP/bed/death state, the seed, internal world label, open/public flags, or private integration routes and storage locations.
 
-## Licence and credit
+The map itself is still sensitive. Owner-selected terrain/fog policy may reveal geography or exploration, and intentional map pins reveal coordinates and text. Process-ephemeral aliases reduce direct reuse of internal owner keys, but they do not make sensitive pin content anonymous. Treat public exposure as deliberate publication: terminate TLS at an HTTPS reverse proxy, apply authentication or network restrictions appropriate to the community, forward WebSocket upgrades explicitly, and keep the backend listener private.
 
-Where applicable, assume content is under the MIT licence.
+The optional journal and link-claim flow are private operator integrations, not part of the browser API. Protect their storage and consumers separately from WebMap's public surface.
+
+## Dependency provenance and licences
+
+The release includes a `websocket-sharp.dll` built during the canonical image/build path from immutable upstream commit `4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1` and exact SHA-256-pinned source archive, plus `THIRD-PARTY-NOTICES.txt`. The repository no longer carries an opaque websocket binary as a canonical dependency input. The exact source, archive hash, pinned Mono/xbuild toolchain, build command, signed assembly identity, artifact-hash reporting, and honest non-byte-reproducibility boundary are documented in [docs/DEPENDENCY_PROVENANCE.md](docs/DEPENDENCY_PROVENANCE.md).
 
 - Current fork maintenance: [dogekamii](https://github.com/dogekamii)
 - Upstream maintenance: [Jeff Clark / h0tw1r3](https://github.com/h0tw1r3)

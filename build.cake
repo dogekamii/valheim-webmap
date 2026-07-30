@@ -9,6 +9,21 @@ var target = Argument("target", "Build");
 var configuration = Argument("configuration", "Release");
 
 var tempDir = System.IO.Path.GetTempPath();
+var websocketSourceRoot = "/opt/websocket-sharp-src";
+var websocketSourceProject = $"{websocketSourceRoot}/websocket-sharp/websocket-sharp.csproj";
+var websocketBuildPath = System.IO.Path.Combine(tempDir, "websocket-sharp-build");
+var websocketIntermediatePath = System.IO.Path.Combine(websocketBuildPath, "obj");
+var websocketAssemblyPath = System.IO.Path.Combine(websocketBuildPath, "websocket-sharp.dll");
+var websocketCommit = "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1";
+var releaseArchivePath = "dist/valheim-webmap-2.7.4.zip";
+
+int RunCheckedBuildCommand(string stepName, string command)
+{
+    return StartProcess("/bin/bash", new ProcessSettings
+    {
+        Arguments = $"scripts/run-build-step.sh \"{stepName}\" {command}"
+    });
+}
 
 var publicizerInputPath = "./libs/valheim/";
 var publicizerOutputPath = publicizerInputPath;
@@ -35,6 +50,10 @@ Task("Clean")
 
     CleanDirectory($"./WebMap/obj");
     DeleteFiles("./WebMap/web/main.js");
+    if (DirectoryExists(websocketBuildPath))
+    {
+        CleanDirectory(websocketBuildPath);
+    }
     foreach (var asm in assembliesToPublicize)
     {
       DeleteFiles(asm.Output);
@@ -65,19 +84,70 @@ Task("Publicize")
     }
 });
 
+Task("BuildWebsocketSharp")
+    .Does((context) =>
+{
+    var commitFile = System.IO.Path.Combine(websocketSourceRoot, ".upstream-commit");
+    if (!System.IO.File.Exists(websocketSourceProject) ||
+        !System.IO.File.Exists(commitFile) ||
+        System.IO.File.ReadAllText(commitFile).Trim() != websocketCommit)
+    {
+        throw new Exception("Verified websocket-sharp source tree is missing or has the wrong commit.");
+    }
+
+    EnsureDirectoryExists(websocketBuildPath);
+    CleanDirectory(websocketBuildPath);
+    EnsureDirectoryExists(websocketIntermediatePath);
+    var sourceBuildExitCode = RunCheckedBuildCommand(
+        "websocket source xbuild",
+        $"xbuild \"{websocketSourceProject}\" /target:Rebuild /property:Configuration=Release /property:OutputPath=\"{websocketBuildPath}/\" /property:BaseIntermediateOutputPath=\"{websocketIntermediatePath}/\" /property:IntermediateOutputPath=\"{websocketIntermediatePath}/\" /verbosity:minimal"
+    );
+    if (sourceBuildExitCode != 0 || !System.IO.File.Exists(websocketAssemblyPath) || new System.IO.FileInfo(websocketAssemblyPath).Length == 0)
+    {
+        throw new Exception("Canonical websocket-sharp source build failed.");
+    }
+    context.Information($"Built websocket-sharp from verified commit {websocketCommit} at {websocketAssemblyPath}.");
+});
+
 var BuildTask = Task("Build")
     .Does(() =>
 {
-    DotNetBuild("./WebMap/WebMap.csproj", new DotNetBuildSettings
+    var webMapBuildExitCode = RunCheckedBuildCommand(
+        "WebMap dotnet build",
+        $"dotnet build \"./WebMap/WebMap.csproj\" --configuration \"{configuration}\""
+    );
+    if (webMapBuildExitCode != 0)
     {
-        Configuration = configuration,
-    });
+        throw new Exception("WebMap managed build failed.");
+    }
+
+    if (configuration == "Release")
+    {
+        var packageExitCode = RunCheckedBuildCommand(
+            "release packager",
+            $"node scripts/package-release.js WebMap/bin/Release/net48 WebMap/web THIRD-PARTY-NOTICES.txt \"{websocketAssemblyPath}\" dist"
+        );
+        if (packageExitCode != 0)
+        {
+            throw new Exception("Canonical installable release archive packaging failed.");
+        }
+
+        var inspectionExitCode = RunCheckedBuildCommand(
+            "release privacy inspector",
+            $"bash scripts/inspect-release-privacy.sh {releaseArchivePath}"
+        );
+        if (inspectionExitCode != 0)
+        {
+            throw new Exception("Release archive privacy inspection failed.");
+        }
+    }
 });
 
 if (HasArgument("rebuild")) {
     BuildTask.IsDependentOn("Clean");
 }
 BuildTask.IsDependentOn("Publicize");
+BuildTask.IsDependentOn("BuildWebsocketSharp");
 BuildTask.IsDependentOn("BuildNpm");
 
 Task("BuildNpm").Does(() => {

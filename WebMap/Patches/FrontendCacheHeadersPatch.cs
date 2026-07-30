@@ -6,9 +6,6 @@ using WebSocketSharp.Server;
 
 namespace WebMap.Patches
 {
-    // The document chooses the content-addressed application bundle, so a
-    // shared cache must fetch it from the current WebMap release every time.
-    // Handle it before MapDataServer's immutable static-file path.
     [HarmonyPatch(typeof(MapDataServer), "ServeStaticFiles")]
     internal static class FrontendCacheHeadersPatch
     {
@@ -16,27 +13,34 @@ namespace WebMap.Patches
         private static bool ServeUncachedIndex(HttpRequestEventArgs e, string ___publicRoot)
         {
             string requestPath = e.Request.Url.AbsolutePath;
-            if (requestPath != "/" && requestPath != "/index.html")
-            {
-                return true;
-            }
-
+            if (requestPath != "/" && requestPath != "/index.html") return true;
+            byte[] bytes;
             try
             {
-                byte[] indexBytes = File.ReadAllBytes(Path.Combine(___publicRoot, "index.html"));
-                e.Response.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
-                e.Response.ContentType = "text/html";
-                e.Response.StatusCode = 200;
-                e.Response.ContentLength64 = indexBytes.Length;
-                e.Response.Close(indexBytes, true);
+                bytes = File.ReadAllBytes(Path.Combine(___publicRoot, "index.html"));
             }
-            catch (Exception ex)
+            catch (IOException)
             {
-                ZLog.LogError("WebMap: FAILED TO READ INDEX FILE! " + ex.Message);
-                e.Response.StatusCode = 404;
-                e.Response.Close();
+                return ServeMissingIndex(e);
             }
+            catch (UnauthorizedAccessException)
+            {
+                return ServeMissingIndex(e);
+            }
+            e.Response.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
+            e.Response.ContentType = "text/html";
+            e.Response.StatusCode = 200;
+            e.Response.ContentLength64 = bytes.Length;
+            e.Response.Close(bytes, true);
+            return false;
+        }
 
+        private static bool ServeMissingIndex(HttpRequestEventArgs e)
+        {
+            ZLog.LogError("WebMap: index read failed");
+            e.Response.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
+            e.Response.StatusCode = 404;
+            e.Response.Close();
             return false;
         }
     }
