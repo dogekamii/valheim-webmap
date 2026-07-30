@@ -42,6 +42,17 @@ def test_failed_managed_build_steps_emit_sanitized_reusable_annotations():
     assert "<path>" in diagnostic
 
 
+def test_success_artifact_notice_crosses_the_docker_boundary():
+    inspector = (repo / "scripts" / "inspect-release-privacy.sh").read_text()
+    assert 'if [[ "${GITHUB_ACTIONS:-}" == "true" ]]' not in inspector
+    notice = next(line for line in inspector.splitlines() if "::notice file=docs/DEPENDENCY_PROVENANCE.md" in line)
+    for required in (
+        "$actual_hash", "$artifact_size", "1.0.2.29017", "5660b08a1845a91e",
+        "mono-devel=$toolchain",
+    ):
+        assert required in notice
+
+
 def test_webmap_compiles_against_only_the_current_source_build_output():
     project = ET.parse(repo / "WebMap" / "WebMap.csproj").getroot()
     references = {
