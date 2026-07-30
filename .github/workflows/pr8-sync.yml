@@ -5,6 +5,7 @@ on:
     branches: [automation/pr8-sync-00700a0]
 
 permissions:
+  actions: write
   contents: write
 
 jobs:
@@ -31,6 +32,8 @@ jobs:
               echo "command=$failed_command"
               echo "phase=$(cat /tmp/pr8-sync-phase.txt 2>/dev/null || true)"
               echo "head=$(git rev-parse HEAD 2>/dev/null || true)"
+              echo "push-output:"
+              cat /tmp/pr8-push.txt 2>/dev/null || true
               echo "status:"
               git status --short || true
               echo "unmerged:"
@@ -63,5 +66,5 @@ jobs:
           git diff --check
           git status --short
           git commit -m "chore: merge latest security/privacy base"
-          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$OLD_HEAD_SHA" origin "HEAD:refs/heads/$TARGET_BRANCH"
+          git push --force-with-lease="refs/heads/$TARGET_BRANCH:$OLD_HEAD_SHA" origin "HEAD:refs/heads/$TARGET_BRANCH" > /tmp/pr8-push.txt 2>&1
           git push origin --delete "$TEMP_BRANCH"
