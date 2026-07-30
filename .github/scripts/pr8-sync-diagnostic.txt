@@ -1,5 +1,6 @@
 exit=1
-command=git push origin "HEAD:refs/heads/$TARGET_BRANCH"
+command=git push --force-with-lease="refs/heads/$TARGET_BRANCH:$OLD_HEAD_SHA" origin "HEAD:refs/heads/$TARGET_BRANCH"
 phase=complete
+head=41589a8b3fa36182c8c2a171601ebcec9d3b8812
 status:
 unmerged:
