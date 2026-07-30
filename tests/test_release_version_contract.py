@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 
 # These are the release metadata fields consumed by BepInEx, Thunderstore,
 # npm, and the reproducible browser-build lockfile.
-EXPECTED_VERSION = "2.7.3"
+EXPECTED_VERSION = "2.7.4"
 repo = Path(__file__).parents[1]
 
 webmap_source = (repo / "WebMap" / "WebMap.cs").read_text()
@@ -27,4 +27,13 @@ package_lock = json.loads((repo / "package-lock.json").read_text())
 assert package_lock["version"] == EXPECTED_VERSION, "package-lock root version must match"
 assert package_lock["packages"][""]["version"] == EXPECTED_VERSION, (
     "package-lock root package version must match"
+)
+
+readme = (repo / "README.md").read_text()
+assert "2.7.4" in readme, "README must identify the 2.7.4 candidate"
+assert "2.7.3" not in readme, "README current-version claims must be coherent"
+
+changelog = (repo / "CHANGELOG.md").read_text()
+assert re.search(r"^## 2\.7\.4\b", changelog, re.MULTILINE), (
+    "changelog must document the 2.7.4 candidate"
 )
