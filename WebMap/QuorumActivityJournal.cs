@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using UnityEngine;
@@ -8,6 +9,11 @@ namespace WebMap
 {
     internal static class QuorumActivityJournal
     {
+        private const uint JournalFileMode = 0x180; // 0600: owner read/write only
+
+        [DllImport("libc", SetLastError = true)]
+        private static extern int chmod(string path, uint mode);
+
         [Serializable]
         private class ActivityEvent
         {
@@ -71,16 +77,32 @@ namespace WebMap
                 };
                 AppendJson(JsonUtility.ToJson(activityEvent));
             }
-            catch (Exception exception)
+            catch
             {
-                ZLog.LogWarning("WebMap: quorum activity journal append failed: " + exception.Message);
+                ZLog.LogWarning("WebMap: quorum activity journal append failed");
             }
         }
 
         private static void AppendJson(string json)
         {
             string path = Path.Combine(WebMap.worldDataPath, "quorum_activity.jsonl");
-            File.AppendAllText(path, json + Environment.NewLine);
+            using (FileStream stream = new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+            {
+                PlatformID platform = Environment.OSVersion.Platform;
+                bool isWindows = platform == PlatformID.Win32NT ||
+                                 platform == PlatformID.Win32S ||
+                                 platform == PlatformID.Win32Windows ||
+                                 platform == PlatformID.WinCE;
+                if (!isWindows && chmod(path, JournalFileMode) != 0)
+                {
+                    throw new IOException("Unable to restrict quorum journal permissions");
+                }
+
+                using (StreamWriter writer = new StreamWriter(stream, new UTF8Encoding(false)))
+                {
+                    writer.WriteLine(json);
+                }
+            }
         }
 
         private static string Sha256(string value)

@@ -39,3 +39,7 @@ jobs:
           test -s WebMap/bin/Release/net48/websocket-sharp.dll
           test -n "$(find WebMap/web -maxdepth 1 -name 'main.*.js' -size +0c -print -quit)"
           test ! -e WebMap/web/main.js
+      - name: Reject compile-only DLLs from release output
+        run: |
+          unexpected="$(find WebMap/bin/Release/net48 -maxdepth 1 -type f -name '*.dll' ! -name 'WebMap.dll' ! -name 'websocket-sharp.dll' -print -quit)"
+          test -z "$unexpected"

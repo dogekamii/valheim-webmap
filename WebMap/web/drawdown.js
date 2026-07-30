@@ -69,6 +69,33 @@
         return str.replace(rx_escape, '$1');
     }
 
+    function escapeAttribute(str) {
+        return str.replace(/&/g, '&amp;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;');
+    }
+
+    function safeLinkTarget(value, image) {
+        var target = unesc(value).trim();
+        if (!target || /[\u0000-\u001f\u007f"'<>]/.test(target)) {
+            return null;
+        }
+
+        var compact = target.replace(/[\u0000-\u0020]+/g, '');
+        var match = compact.match(/^([a-z][a-z0-9+.-]*):/i);
+        if (match) {
+            var scheme = match[1].toLowerCase();
+            var allowed = image ? ['http', 'https'] : ['http', 'https', 'mailto'];
+            if (allowed.indexOf(scheme) === -1) {
+                return null;
+            }
+        }
+
+        return escapeAttribute(target);
+    }
+
     var stash = [];
     var si = 0;
 
@@ -96,11 +123,14 @@
 
     // link or image
     replace(rx_link, function(all, p1, p2, p3, p4, p5, p6) {
-        stash[--si] = p4
+        var target = p4 ? safeLinkTarget(p4, Boolean(p2)) : null;
+        stash[--si] = p4 && target
             ? p2
-                ? '<img src="' + p4 + '" alt="' + p3 + '"/>'
-                : '<a href="' + p4 + '">' + unesc(highlight(p3)) + '</a>'
-            : p6;
+                ? '<img src="' + target + '" alt="' + escapeAttribute(unesc(p3)) + '"/>'
+                : '<a href="' + target + '">' + unesc(highlight(p3)) + '</a>'
+            : p4
+                ? unesc(highlight(p3))
+                : p6;
         return si + '\uf8ff';
     });
 
