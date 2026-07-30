@@ -14,22 +14,33 @@ namespace WebMap.Patches
         {
             string requestPath = e.Request.Url.AbsolutePath;
             if (requestPath != "/" && requestPath != "/index.html") return true;
+            byte[] bytes;
             try
             {
-                byte[] bytes = File.ReadAllBytes(Path.Combine(___publicRoot, "index.html"));
-                e.Response.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
-                e.Response.ContentType = "text/html";
-                e.Response.StatusCode = 200;
-                e.Response.ContentLength64 = bytes.Length;
-                e.Response.Close(bytes, true);
+                bytes = File.ReadAllBytes(Path.Combine(___publicRoot, "index.html"));
             }
-            catch
+            catch (IOException)
             {
-                ZLog.LogError("WebMap: index read failed");
-                e.Response.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
-                e.Response.StatusCode = 404;
-                e.Response.Close();
+                return ServeMissingIndex(e);
             }
+            catch (UnauthorizedAccessException)
+            {
+                return ServeMissingIndex(e);
+            }
+            e.Response.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
+            e.Response.ContentType = "text/html";
+            e.Response.StatusCode = 200;
+            e.Response.ContentLength64 = bytes.Length;
+            e.Response.Close(bytes, true);
+            return false;
+        }
+
+        private static bool ServeMissingIndex(HttpRequestEventArgs e)
+        {
+            ZLog.LogError("WebMap: index read failed");
+            e.Response.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
+            e.Response.StatusCode = 404;
+            e.Response.Close();
             return false;
         }
     }
