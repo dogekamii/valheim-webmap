@@ -6,6 +6,7 @@ SERVER = (ROOT / "WebMap" / "MapDataServer.cs").read_text(encoding="utf-8")
 WEBMAP = (ROOT / "WebMap" / "WebMap.cs").read_text(encoding="utf-8")
 CONFIG = (ROOT / "WebMap" / "Config.cs").read_text(encoding="utf-8")
 JOURNAL = (ROOT / "WebMap" / "QuorumActivityJournal.cs").read_text(encoding="utf-8")
+LINK = (ROOT / "WebMap" / "QuorumLinkClaimPatch.cs").read_text(encoding="utf-8")
 WEBHOOK_PATH = ROOT / "WebMap" / "DiscordWebHook.cs"
 WEBHOOK = WEBHOOK_PATH.read_text(encoding="utf-8") if WEBHOOK_PATH.exists() else ""
 
@@ -61,6 +62,40 @@ def test_pin_authorization_uses_exact_validated_structured_owner():
     assert "return false" in routed
 
 
+def test_private_pin_parser_rejects_noncanonical_malformed_and_oversized_records():
+    parser = method_body(SERVER, "private static bool TryParsePrivatePin")
+    assert "parts.Length != 7" in parser
+    assert "MaxPrivatePinRecordLength" in parser
+    assert "IsValidOwnerKey(parts[0])" in parser
+    assert "IsSafePinToken(parts[1], MaxPinIdLength)" in parser
+    assert "IsSafePinToken(parts[2], MaxPinTypeLength)" in parser
+    assert "IsSafeLegacyName(parts[3])" in parser
+    assert "TryParseCoordinate(parts[4]" in parser
+    assert "TryParseCoordinate(parts[5]" in parser
+    assert "IsSafePublicPinText(parts[6])" in parser
+    assert "float.IsNaN" in SERVER and "float.IsInfinity" in SERVER
+    assert "CultureInfo.InvariantCulture" in SERVER
+    assert "MaxPinCoordinate" in SERVER
+    for bound in (
+        "MaxOwnerKeyLength", "MaxPinIdLength", "MaxPinTypeLength",
+        "MaxLegacyNameLength", "MaxPublicPinTextLength",
+    ):
+        assert bound in SERVER
+    assert "char.IsControl" in SERVER
+
+
+def test_only_validated_private_pins_can_enter_storage_or_live_broadcasts():
+    replace = method_body(SERVER, "public void ReplacePins")
+    assert "TryParsePrivatePin" in replace
+    assert replace.index("TryParsePrivatePin") < replace.index("privatePins.Add")
+    add = method_body(SERVER, "public void AddPin")
+    assert "TryParsePrivatePin(record" in add
+    assert add.index("TryParsePrivatePin(record") < add.index("privatePins.Add")
+    publish = method_body(SERVER, "private void PublishPinSnapshot")
+    assert "TrySerializePublicPin" in publish
+    assert "serialized.Add" in publish
+
+
 def test_future_pin_records_omit_player_names_but_old_rows_remain_readable():
     add_pin = method_body(SERVER, "public void AddPin")
     assert "name" not in re.sub(r"public void AddPin\([^)]*\)", "", add_pin)
@@ -81,6 +116,14 @@ def test_pin_commands_use_exact_case_insensitive_tokens_and_prefixes_stay_chat()
     assert '.ToUpper().StartsWith("!PIN")' not in routed
     assert '.ToUpper().StartsWith("!UNDOPIN")' not in routed
     assert '.ToUpper().StartsWith("!DELETEPIN")' not in routed
+
+
+def test_private_link_interception_runs_before_generic_chat_and_remains_fail_closed():
+    assert "[HarmonyPriority(Priority.First)]" in LINK
+    prefix = method_body(LINK, "private static bool Prefix(ref ZRoutedRpc.RoutedRPCData data)")
+    assert "IgnoredLinkClaimMethodHash" in prefix
+    assert "return false" in prefix
+    assert "return true" in prefix
 
 
 def test_journal_is_name_free_and_join_leave_never_add_public_messages():
