@@ -27,10 +27,8 @@ namespace WebMap
         public static string mapDataPath;
         public static string pluginPath;
         public static int sayMethodHash;
-        public static int chatMessageMethodHash;
         public static bool fogTextureNeedsSaving;
         public static string currentWorldName;
-        public static Dictionary<string, object> serverInfo;
         public static WebMap instance;
         private static Harmony harmony;
         private bool mapServerStarted;
@@ -94,12 +92,6 @@ namespace WebMap
             throw new MissingMethodException("Unity image decoding API is unavailable");
         }
 
-        public void SetServerInfo(bool openServer, bool publicServer, string serverName, string password, string worldName, string worldSeed)
-        {
-            serverInfo = new Dictionary<string, object>();
-            serverInfo.Add("serverName", serverName ?? string.Empty);
-        }
-
         public void NotifyOnline() => discordWebHook?.SendMessage("Server is online");
         public void NotifyOffline() => discordWebHook?.SendMessage("Server is offline");
 
@@ -137,8 +129,14 @@ namespace WebMap
             {
                 mapDataServer.PublishMap(File.ReadAllBytes(Path.Combine(worldDataPath, "map.png")));
             }
-            catch
+            catch (IOException)
             {
+                mapDataServer.PublishMap(null);
+                ZLog.LogWarning("WebMap: map image unavailable");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                mapDataServer.PublishMap(null);
                 ZLog.LogWarning("WebMap: map image unavailable");
             }
 
@@ -157,11 +155,13 @@ namespace WebMap
                 blankFog.SetPixels32(colors);
                 mapDataServer.fogTexture = blankFog;
                 try { File.WriteAllBytes(Path.Combine(worldDataPath, "fog.png"), EncodeTextureToPng(blankFog)); }
-                catch { ZLog.LogError("WebMap: fog image write failed"); }
+                catch (IOException) { ZLog.LogError("WebMap: fog image write failed"); }
+                catch (UnauthorizedAccessException) { ZLog.LogError("WebMap: fog image write failed"); }
             }
 
             try { mapDataServer.ReplacePins(File.ReadAllLines(Path.Combine(worldDataPath, "pins.csv"))); }
-            catch { mapDataServer.ReplacePins(Array.Empty<string>()); }
+            catch (IOException) { mapDataServer.ReplacePins(Array.Empty<string>()); }
+            catch (UnauthorizedAccessException) { mapDataServer.ReplacePins(Array.Empty<string>()); }
             if (forceReload) mapDataServer.Reload();
         }
 
@@ -183,8 +183,7 @@ namespace WebMap
             int half = WebMapConfig.TEXTURE_SIZE / 2;
             foreach (ZNetPeer player in mapDataServer.players)
             {
-                ZDO zdo = null;
-                try { zdo = ZDOMan.instance.GetZDO(player.m_characterID); } catch { }
+                ZDO zdo = ZDOMan.instance.GetZDO(player.m_characterID);
                 if (zdo == null) continue;
                 Vector3 position = zdo.GetPosition();
                 int pixelX = Mathf.RoundToInt(position.x / WebMapConfig.PIXEL_SIZE + half);
@@ -223,13 +222,15 @@ namespace WebMap
                 File.WriteAllBytes(Path.Combine(worldDataPath, "fog.png"), bytes);
                 fogTextureNeedsSaving = false;
             }
-            catch { ZLog.LogError("WebMap: fog image write failed"); }
+            catch (IOException) { ZLog.LogError("WebMap: fog image write failed"); }
+            catch (UnauthorizedAccessException) { ZLog.LogError("WebMap: fog image write failed"); }
         }
 
         public static void SavePins()
         {
             try { File.WriteAllLines(Path.Combine(worldDataPath, "pins.csv"), mapDataServer.GetPrivatePinsSnapshot()); }
-            catch { ZLog.LogError("WebMap: pin file write failed"); }
+            catch (IOException) { ZLog.LogError("WebMap: pin file write failed"); }
+            catch (UnauthorizedAccessException) { ZLog.LogError("WebMap: pin file write failed"); }
         }
 
         [HarmonyPatch(typeof(ZoneSystem), nameof(ZoneSystem.Start))]
@@ -337,7 +338,8 @@ namespace WebMap
                 ZLog.LogError("WebMap: HTTP server start failed");
                 return;
             }
-            try { Online(); } catch { ZLog.LogError("WebMap: online initialization failed"); }
+            try { Online(); }
+            catch { ZLog.LogError("WebMap: online initialization failed"); }
         }
 
         [HarmonyPatch(typeof(ZNet), "WorldSetup")]
@@ -359,15 +361,6 @@ namespace WebMap
             {
                 mapDataServer?.Stop();
                 WebMap.instance?.NotifyOffline();
-            }
-        }
-
-        [HarmonyPatch(typeof(ZNet), nameof(ZNet.SetServer))]
-        private class ZNetPatchSetServer
-        {
-            private static void Postfix(bool server, bool openServer, bool publicServer, string serverName, string password, World world)
-            {
-                WebMap.instance.SetServerInfo(openServer, publicServer, serverName, password, world.m_name, world.m_seedName);
             }
         }
 
