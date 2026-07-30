@@ -70,7 +70,7 @@ Activity collection, account linking, and RSVP eligibility are separate concerns
 ## Updating
 
 1. Stop the dedicated server and back up operator configuration and map state outside the replacement directory.
-2. Verify the new release contains exactly the four files listed above. Verify `websocket-sharp.dll` against [dependency provenance](docs/DEPENDENCY_PROVENANCE.md), and retain the notice unchanged.
+2. Verify the new release contains exactly the four files listed above. Verify that `websocket-sharp.dll` matches the source-built artifact facts published by the authoritative release job and [dependency provenance](docs/DEPENDENCY_PROVENANCE.md), and retain the notice unchanged.
 3. Remove the previous release payload, then install the complete replacement. Do not preserve an unhashed `main.js`, stale hashed bundles, PDBs, extra DLLs, generated configuration, or private data in the release directory.
 4. Restart the dedicated server and confirm startup through the ordinary BepInEx log without publishing private endpoints or paths.
 5. Confirm the HTTPS entrypoint and WebSocket upgrade through the reverse proxy. A hard refresh should retrieve the current content-addressed bundle.
@@ -97,7 +97,7 @@ The optional journal and link-claim flow are private operator integrations, not 
 
 ## Dependency provenance and licences
 
-The release includes a pinned `websocket-sharp.dll` and `THIRD-PARTY-NOTICES.txt`. Exact measured dependency facts and the unresolved source-build provenance are documented in [docs/DEPENDENCY_PROVENANCE.md](docs/DEPENDENCY_PROVENANCE.md).
+The release includes a `websocket-sharp.dll` built during the canonical image/build path from immutable upstream commit `4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1` and exact SHA-256-pinned source archive, plus `THIRD-PARTY-NOTICES.txt`. The repository no longer carries an opaque websocket binary as a canonical dependency input. The exact source, archive hash, pinned Mono/xbuild toolchain, build command, signed assembly identity, artifact-hash reporting, and honest non-byte-reproducibility boundary are documented in [docs/DEPENDENCY_PROVENANCE.md](docs/DEPENDENCY_PROVENANCE.md).
 
 - Current fork maintenance: [dogekamii](https://github.com/dogekamii)
 - Upstream maintenance: [Jeff Clark / h0tw1r3](https://github.com/h0tw1r3)
