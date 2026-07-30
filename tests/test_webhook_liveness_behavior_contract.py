@@ -42,7 +42,7 @@ def test_send_message_is_nonblocking_bounded_and_does_no_network_or_payload_work
     assert "TryAdd" in send
     assert "MaxPayloadLength" in send
     for forbidden in (
-        "Add(", "WebRequest", "WebClient", "UploadValues", "GetResponse",
+        ".Add(", "WebRequest", "WebClient", "UploadValues", "GetResponse",
         "GetRequestStream", "Encoding.", "EscapeDataString", "new Thread", "Task.Run",
     ):
         assert forbidden not in send
