@@ -44,7 +44,8 @@ namespace WebMap
                     id = (long)(BitConverter.ToUInt64(bytes, 0) & (ulong)MaxJavaScriptInteger);
                 } while (id == 0 || !UsedIds.Add(id));
                 int aliasNumber = nextAlias++;
-                PublicIdentityValue identity = new PublicIdentityValue(id, $"Player {aliasNumber}");
+                string Alias = $"Player {aliasNumber}";
+                PublicIdentityValue identity = new PublicIdentityValue(id, Alias);
                 Identities.Add(owner, identity);
                 return identity;
             }
@@ -139,7 +140,7 @@ namespace WebMap
         private string BuildPlayerSnapshot(int count)
         {
             int boundedCount = Math.Min(MaxPublicOnlineCount, Math.Max(0, count));
-            return "players\n{\"online\":" + boundedCount.ToString(CultureInfo.InvariantCulture) + "}";
+            return "players\n{" + '"' + "online" + '"' + ":" + boundedCount.ToString(CultureInfo.InvariantCulture) + "}";
         }
 
         public IEnumerator PublishSnapshotsOnMainThread()
