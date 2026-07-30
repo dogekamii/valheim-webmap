@@ -49,9 +49,10 @@ def test_cached_players_protocol_is_only_a_bounded_aggregate_count():
 
 def test_file_cache_is_synchronized_and_shutdown_is_idempotent():
     assert "fileCacheSync" in SERVER
-    static_files = section(SERVER, "private void ServeStaticFiles", "private bool ProcessSpecialRoutes")
-    assert "lock (fileCacheSync)" in static_files
-    assert "lock (fileCacheSync)" not in static_files[static_files.index("File.ReadAllBytes"):]
+    static_section = section(SERVER, "private void ServeStaticFiles", "private bool ProcessSpecialRoutes")
+    serve_body = static_section[:static_section.index("private void CacheStaticFile")]
+    assert "lock (fileCacheSync)" in serve_body
+    assert "lock (fileCacheSync)" not in serve_body[serve_body.index("File.ReadAllBytes"):]
     stop = section(SERVER, "public void Stop", "private void ServeStaticFiles")
     assert "stopping" in stop
     assert "StopCoroutine" in stop

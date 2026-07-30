@@ -33,7 +33,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -qy npm webpack unzip vim-tiny lib32gcc-s1 util-linux dumb-init && \
     find /var/log -name '*.log' -delete
 
-# 6.0 runtime is currently required for BepInEx Assembly Publicizer Cli
 RUN /usr/lib/apt/apt-helper download-file https://dot.net/v1/dotnet-install.sh /usr/local/bin/dotnet-install.sh && \
     chmod +x /usr/local/bin/dotnet-install.sh && \
     dotnet-install.sh -c 6.0 -i /usr/share/dotnet --runtime dotnet && \
@@ -82,4 +81,4 @@ RUN chmod a+rx /root
 
 COPY entrypoint.sh /.entrypoint.sh
 
-ENTRYPOINT ["/.entrypoint.sh"]
+ENTRYPOINT ["/.entrypoint.sh", "/bin/bash"]
