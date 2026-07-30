@@ -1,14 +1,51 @@
 #!/usr/bin/env bash
 set -euo pipefail
 output="WebMap/bin/Release/net48"
+expected_hash="33c2b65512e71a0c05cbe1c2f89343605653e5f7fada91885ba756b12121b244"
+notice_name="THIRD-PARTY-NOTICES.txt"
+
+mapfile -t entries < <(find "$output" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
+if [[ ${#entries[@]} -ne 4 ]]; then
+    echo "privacy inspection failed: expected exactly four release files" >&2
+    exit 1
+fi
 mapfile -t dlls < <(find "$output" -maxdepth 1 -type f -name '*.dll' -print | sort)
 if [[ ${#dlls[@]} -ne 2 ]] || [[ ! -s "$output/WebMap.dll" ]] || [[ ! -s "$output/websocket-sharp.dll" ]]; then
     echo "privacy inspection failed: expected exactly two DLLs" >&2
     exit 1
 fi
-mapfile -t bundles < <(find WebMap/web -maxdepth 1 -type f -name 'main.*.js' -size +0c -print)
-if [[ ${#bundles[@]} -ne 1 ]] || [[ -e WebMap/web/main.js ]]; then
-    echo "privacy inspection failed: expected one hashed main.*.js and no main.js" >&2
+
+mapfile -t bundles < <(find "$output" -maxdepth 1 -type f -name 'main.*.js' -size +0c -printf '%f\n')
+if [[ ${#bundles[@]} -ne 1 ]] || [[ ! "${bundles[0]}" =~ ^main\.[0-9a-f]{16}\.js$ ]] || [[ -e "$output/main.js" ]]; then
+    echo "privacy inspection failed: expected one main.[0-9a-f]{16}.js and no main.js" >&2
+    exit 1
+fi
+expected_entries=("THIRD-PARTY-NOTICES.txt" "WebMap.dll" "${bundles[0]}" "websocket-sharp.dll")
+IFS=$'\n' expected_entries=($(printf '%s\n' "${expected_entries[@]}" | sort)); unset IFS
+if [[ "${entries[*]}" != "${expected_entries[*]}" ]]; then
+    echo "privacy inspection failed: release allowlist mismatch" >&2
+    exit 1
+fi
+
+if [[ ! -s "$output/$notice_name" ]]; then
+    echo "privacy inspection failed: third-party notice missing" >&2
+    exit 1
+fi
+for required in \
+    'https://github.com/sta/websocket-sharp' \
+    '4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1' \
+    'Permission is hereby granted, free of charge' \
+    'THE SOFTWARE IS PROVIDED "AS IS"' \
+    'Exact binary-to-source-build provenance' \
+    'unverified'; do
+    if ! grep -Fq -- "$required" "$output/$notice_name"; then
+        echo "privacy inspection failed: incomplete third-party notice" >&2
+        exit 1
+    fi
+done
+actual_hash="$(sha256sum "$output/websocket-sharp.dll" | awk '{print $1}')"
+if [[ "$actual_hash" != "$expected_hash" ]]; then
+    echo "privacy inspection failed: websocket-sharp.dll hash mismatch" >&2
     exit 1
 fi
 
@@ -32,14 +69,15 @@ for token in 'MapMessage' 'BroadcastMessage' 'BroadcastPing' 'AddExtraPlayer' 'S
     fi
 done
 
+bundle="$output/${bundles[0]}"
 for token in 'playerMapIcons' 'followPlayer' 'followIcon' 'setFollowIcon' 'centerOnIcon' 'maxHealth' 'health' 'messages\n' 'ping\n' 'world_name' 'worldSeed' 'password' 'openServer' 'publicServer' 'serverInfo' 'serverName'; do
-    if grep -aFq -- "$token" "${bundles[0]}"; then
+    if grep -aFq -- "$token" "$bundle"; then
         echo "privacy inspection failed: browser telemetry or private metadata symbol" >&2
         exit 1
     fi
 done
 for required in 'online' 'map_digest'; do
-    if ! grep -aFq -- "$required" "${runtime_sources[@]}" || ! grep -aFq -- "$required" "${bundles[0]}"; then
+    if ! grep -aFq -- "$required" "${runtime_sources[@]}" || ! grep -aFq -- "$required" "$bundle"; then
         echo "privacy inspection failed: required aggregate/map protocol missing" >&2
         exit 1
     fi

@@ -72,6 +72,27 @@ var BuildTask = Task("Build")
     {
         Configuration = configuration,
     });
+
+    if (configuration == "Release")
+    {
+        var packageExitCode = StartProcess("node", new ProcessSettings
+        {
+            Arguments = "scripts/package-release.js"
+        });
+        if (packageExitCode != 0)
+        {
+            throw new Exception("Canonical four-file release packaging failed.");
+        }
+
+        var inspectionExitCode = StartProcess("/bin/bash", new ProcessSettings
+        {
+            Arguments = "scripts/inspect-release-privacy.sh"
+        });
+        if (inspectionExitCode != 0)
+        {
+            throw new Exception("Release privacy inspection failed.");
+        }
+    }
 });
 
 if (HasArgument("rebuild")) {
