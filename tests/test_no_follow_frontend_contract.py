@@ -9,3 +9,10 @@ def test_browser_map_has_no_player_follow_state_or_api():
     for forbidden in ("followIcon", "setFollowIcon", "centerOnIcon"):
         assert forbidden not in MAP
         assert forbidden in INSPECTOR
+
+
+def test_browser_icon_collection_is_bounded():
+    assert "MAX_MAP_ICONS" in MAP
+    add_icon = MAP[MAP.index("const addIcon"):MAP.index("const hideIcon")]
+    assert "mapIcons.length" in add_icon
+    assert "MAX_MAP_ICONS" in add_icon
