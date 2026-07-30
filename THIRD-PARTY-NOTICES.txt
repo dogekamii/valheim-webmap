@@ -13,8 +13,10 @@ The packaged signed assembly is built from the immutable, hash-verified source
 above during the canonical build. The build uses Debian bookworm
 mono-devel 6.8.0.105+dfsg-3.3+deb12u1 and xbuild Release after normalizing the
 upstream wildcard AssemblyVersion to the compatible fixed identity
-1.0.2.29017. The complete command and per-release artifact hash are recorded in
-docs/DEPENDENCY_PROVENANCE.md.
+1.0.2.29017. The complete command and the non-byte-reproducible artifact
+reporting boundary are documented in docs/DEPENDENCY_PROVENANCE.md; each
+successful canonical release inspection emits that artifact's exact hash and
+size.
 
 The MIT License (MIT)
 

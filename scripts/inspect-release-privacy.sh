@@ -72,10 +72,6 @@ if ! grep -Fqi '5660b08a1845a91e' <<<"$public_key_output" || ! sn -vf "$output/w
 fi
 artifact_size="$(stat -c '%s' "$output/websocket-sharp.dll")"
 toolchain="$(dpkg-query -W -f='${Version}' mono-devel)"
-echo "source-built websocket-sharp.dll: sha256=$actual_hash size=$artifact_size identity=websocket-sharp,Version=1.0.2.29017,PublicKeyToken=5660b08a1845a91e mono-devel=$toolchain"
-if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-    echo "::notice file=docs/DEPENDENCY_PROVENANCE.md,line=1::source-built websocket-sharp.dll sha256=$actual_hash size=$artifact_size identity=websocket-sharp,Version=1.0.2.29017,PublicKeyToken=5660b08a1845a91e mono-devel=$toolchain"
-fi
 
 runtime_sources=(WebMap/MapDataServer.cs WebMap/WebMap.cs WebMap/Config.cs)
 telemetry_tokens=('MapMessage' 'BroadcastMessage' 'BroadcastPing' '/messages' 'messages\n' 'ping\n' 'max_health' 'm_playerName' 'm_publicRefPos' 'inBed' 'ServerClient' 'AddExtraPlayer' 'SendPlayerList' 'worldSeed' 'password' 'openServer' 'publicServer' 'serverInfo' 'serverName' 'world_name')
@@ -114,4 +110,10 @@ if ! grep -aFq -- 'map_digest' "$output/WebMap.dll"; then
     echo "privacy inspection failed: compiled map protocol missing" >&2
     exit 1
 fi
+
+# The canonical docker invocation does not inherit GITHUB_ACTIONS. Workflow
+# commands remain ordinary output locally and are interpreted by Actions after
+# every package, identity, strong-name, and privacy gate above has passed.
+echo "source-built websocket-sharp.dll: sha256=$actual_hash size=$artifact_size identity=websocket-sharp,Version=1.0.2.29017,PublicKeyToken=5660b08a1845a91e mono-devel=$toolchain"
+echo "::notice file=docs/DEPENDENCY_PROVENANCE.md,line=1::source-built websocket-sharp.dll sha256=$actual_hash size=$artifact_size identity=websocket-sharp,Version=1.0.2.29017,PublicKeyToken=5660b08a1845a91e mono-devel=$toolchain"
 echo "release privacy inspection passed"
