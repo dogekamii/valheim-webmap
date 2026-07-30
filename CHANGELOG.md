@@ -20,7 +20,7 @@
 - Make webhook startup inert when disabled, keep enabled work bounded, avoid sensitive error details, and complete cancellation and teardown deterministically.
 - Harden listener startup, HTTP failure handling, WebSocket reconnect/input behavior, Markdown image sources, and browser icon/timer cleanup.
 - Keep exactly two DLLs in the canonical release while expanding the closed package allowlist to exactly four files: `WebMap.dll`, `websocket-sharp.dll`, one `main.<16 lowercase hex>.js`, and `THIRD-PARTY-NOTICES.txt`.
-- Pin and verify the bundled websocket dependency by size, SHA-256, and Git blob; document that its exact source-build provenance remains unresolved.
+- Replace the opaque vendored websocket binary with a signed .NET 3.5 source build from immutable upstream commit `4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1`; hash-lock and safely extract the source archive, pin the Mono/xbuild toolchain, compile WebMap against that output, and report each release artifact hash.
 
 ## 2.7.3 — 2026-07-28
 

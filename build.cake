@@ -9,6 +9,11 @@ var target = Argument("target", "Build");
 var configuration = Argument("configuration", "Release");
 
 var tempDir = System.IO.Path.GetTempPath();
+var websocketSourceRoot = "/opt/websocket-sharp-src";
+var websocketSourceProject = $"{websocketSourceRoot}/websocket-sharp/websocket-sharp.csproj";
+var websocketBuildPath = System.IO.Path.Combine(tempDir, "websocket-sharp-build");
+var websocketAssemblyPath = System.IO.Path.Combine(websocketBuildPath, "websocket-sharp.dll");
+var websocketCommit = "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1";
 
 var publicizerInputPath = "./libs/valheim/";
 var publicizerOutputPath = publicizerInputPath;
@@ -35,6 +40,10 @@ Task("Clean")
 
     CleanDirectory($"./WebMap/obj");
     DeleteFiles("./WebMap/web/main.js");
+    if (DirectoryExists(websocketBuildPath))
+    {
+        CleanDirectory(websocketBuildPath);
+    }
     foreach (var asm in assembliesToPublicize)
     {
       DeleteFiles(asm.Output);
@@ -65,6 +74,30 @@ Task("Publicize")
     }
 });
 
+Task("BuildWebsocketSharp")
+    .Does((context) =>
+{
+    var commitFile = System.IO.Path.Combine(websocketSourceRoot, ".upstream-commit");
+    if (!System.IO.File.Exists(websocketSourceProject) ||
+        !System.IO.File.Exists(commitFile) ||
+        System.IO.File.ReadAllText(commitFile).Trim() != websocketCommit)
+    {
+        throw new Exception("Verified websocket-sharp source tree is missing or has the wrong commit.");
+    }
+
+    EnsureDirectoryExists(websocketBuildPath);
+    CleanDirectory(websocketBuildPath);
+    var sourceBuildExitCode = StartProcess("xbuild", new ProcessSettings
+    {
+        Arguments = $"\"{websocketSourceProject}\" /target:Rebuild /property:Configuration=Release /property:OutputPath=\"{websocketBuildPath}/\" /verbosity:minimal"
+    });
+    if (sourceBuildExitCode != 0 || !System.IO.File.Exists(websocketAssemblyPath) || new System.IO.FileInfo(websocketAssemblyPath).Length == 0)
+    {
+        throw new Exception("Canonical websocket-sharp source build failed.");
+    }
+    context.Information($"Built websocket-sharp from verified commit {websocketCommit} at {websocketAssemblyPath}.");
+});
+
 var BuildTask = Task("Build")
     .Does(() =>
 {
@@ -77,7 +110,7 @@ var BuildTask = Task("Build")
     {
         var packageExitCode = StartProcess("node", new ProcessSettings
         {
-            Arguments = "scripts/package-release.js"
+            Arguments = $"scripts/package-release.js WebMap/bin/Release/net48 WebMap/web THIRD-PARTY-NOTICES.txt \"{websocketAssemblyPath}\""
         });
         if (packageExitCode != 0)
         {
@@ -99,6 +132,7 @@ if (HasArgument("rebuild")) {
     BuildTask.IsDependentOn("Clean");
 }
 BuildTask.IsDependentOn("Publicize");
+BuildTask.IsDependentOn("BuildWebsocketSharp");
 BuildTask.IsDependentOn("BuildNpm");
 
 Task("BuildNpm").Does(() => {

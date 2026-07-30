@@ -3,14 +3,18 @@ websocket-sharp dependency notice
 
 Bundled binary: websocket-sharp.dll
 Upstream project: https://github.com/sta/websocket-sharp
-Upstream notice source: https://github.com/sta/websocket-sharp/blob/4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1/LICENSE.txt
-Notice commit: 4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1
+Upstream source commit: 4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1
+Source archive: https://codeload.github.com/sta/websocket-sharp/tar.gz/4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1
+Source archive SHA-256: 310267b8fe24ab69e95c78425e24a3644cf4490693c7c398b280d020b435e43a
+Project: websocket-sharp/websocket-sharp.csproj
+License: MIT
 
-The notice below is the applicable 2021 sta websocket-sharp MIT notice. The
-repository history does not identify the upstream source revision or build
-that produced the bundled binary. Exact binary-to-source-build provenance is
-therefore unverified; this file does not claim that the binary was built from
-the notice commit.
+The packaged signed assembly is built from the immutable, hash-verified source
+above during the canonical build. The build uses Debian bookworm
+mono-devel 6.8.0.105+dfsg-3.3+deb12u1 and xbuild Release after normalizing the
+upstream wildcard AssemblyVersion to the compatible fixed identity
+1.0.2.29017. The complete command and per-release artifact hash are recorded in
+docs/DEPENDENCY_PROVENANCE.md.
 
 The MIT License (MIT)
 

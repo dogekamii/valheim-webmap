@@ -1,13 +1,33 @@
 # Dependency provenance
 
-Release dependencies are measured from repository content, not inferred from filenames or licence prose.
+The canonical release builds websocket-sharp from verified source; no repository DLL is accepted as a dependency input.
 
-| Binary filename | Assembly version | Size (bytes) | SHA-256 | Repository Git blob SHA | First repository import | Upstream project | Licence / notice source |
-|---|---:|---:|---|---|---|---|---|
-| `websocket-sharp.dll` | `1.0.2.29017` | `254464` | `33c2b65512e71a0c05cbe1c2f89343605653e5f7fada91885ba756b12121b244` | `140cbc4f926d622ec913791d319b7fb99f5d7e58` | commit `5e5c3361fdac8926f62349bb352cd95c8951f1e9`, Kyle Paulsen, 2021-04-09 | [sta/websocket-sharp](https://github.com/sta/websocket-sharp) | MIT; 2021 notice at commit [`4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1`](https://github.com/sta/websocket-sharp/blob/4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1/LICENSE.txt) |
+## Locked source
 
-## Provenance boundary
+| Fact | Value |
+|---|---|
+| Upstream project | [sta/websocket-sharp](https://github.com/sta/websocket-sharp) |
+| Immutable commit | `4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1` |
+| Source archive | `https://codeload.github.com/sta/websocket-sharp/tar.gz/4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1` |
+| Archive SHA-256 | `310267b8fe24ab69e95c78425e24a3644cf4490693c7c398b280d020b435e43a` |
+| License | MIT; complete 2021 notice in `THIRD-PARTY-NOTICES.txt` |
+| Project path | `websocket-sharp/websocket-sharp.csproj` |
+| Compiler/toolchain | Debian bookworm `mono-devel` / xbuild `6.8.0.105+dfsg-3.3+deb12u1`, pinned in `Dockerfile` |
+| Build output | `/tmp/websocket-sharp-build/websocket-sharp.dll` |
+| Assembly identity | `websocket-sharp, Version=1.0.2.29017, Culture=neutral, PublicKeyToken=5660b08a1845a91e` |
 
-The binary has remained unchanged from its first import in this repository, as identified by the same Git blob SHA. Repository history does not record the upstream websocket-sharp source revision, build command, compiler, or build environment that produced it. **Exact binary-to-source-build provenance remains unverified.** The 2021 upstream commit above is the source of the applicable MIT notice; this document does not claim the bundled binary was built from that commit.
+The canonical image download rejects redirects and non-HTTPS transport, requires HTTP 200 and an expected gzip media type, verifies the exact SHA-256 before extraction, and rejects absolute/parent paths, unexpected roots, links, and device nodes. The archive must contain the signed .NET 3.5 project, key, assembly metadata, and license. Only the upstream wildcard version declaration is normalized from `1.0.2.*` to `1.0.2.29017`, preserving the identity used by the existing WebMap/Valheim Mono deployment while avoiding a time-generated revision.
 
-The canonical release build independently verifies the repository binary and packaged copy against the size and SHA-256 above. `THIRD-PARTY-NOTICES.txt` carries the complete notice in every release package.
+## Exact build command
+
+`build.cake` cleans the output and executes this before compiling WebMap:
+
+```text
+xbuild "/opt/websocket-sharp-src/websocket-sharp/websocket-sharp.csproj" /target:Rebuild /property:Configuration=Release /property:OutputPath="/tmp/websocket-sharp-build/" /verbosity:minimal
+```
+
+`WebMap.csproj` references only that output with CopyLocal enabled. The packager and release inspector byte-compare the CopyLocal/package DLL against the current source-build output, reject the removed opaque hash `33c2b65512e71a0c05cbe1c2f89343605653e5f7fada91885ba756b12121b244`, verify the assembly name/version/public-key token and strong-name signature, and preserve exactly four package files.
+
+## Reproducibility boundary and artifact reporting
+
+The source archive, source normalization, compiler package, command, project, and assembly identity are locked. Mono xbuild/mcs 6.8 does not expose a supported deterministic compilation option for this .NET 3.5 project, and PE/compiler timestamps prevent a justified claim that independent clean builds are byte-reproducible. Therefore the binary hash is intentionally not hard-coded as a reproducible output. Every authoritative release inspection publishes the exact artifact SHA-256 and size as a GitHub Actions notice; that hash identifies that release artifact without claiming universal binary determinism.

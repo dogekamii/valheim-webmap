@@ -1,21 +1,14 @@
 """Release dependency source provenance, notice, package, and docs contracts."""
 from pathlib import Path
-import hashlib
-import io
-import posixpath
-import re
 import shutil
 import subprocess
-import tarfile
-import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 OPAQUE_WEBSOCKET = ROOT / "libs" / "websocket-sharp.dll"
 OPAQUE_SHA256 = "33c2b65512e71a0c05cbe1c2f89343605653e5f7fada91885ba756b12121b244"
 UPSTREAM_COMMIT = "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1"
 ARCHIVE_URL = f"https://codeload.github.com/sta/websocket-sharp/tar.gz/{UPSTREAM_COMMIT}"
-# Discovery RED: replace only after Actions reports the immutable archive digest.
-ARCHIVE_SHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
+ARCHIVE_SHA256 = "310267b8fe24ab69e95c78425e24a3644cf4490693c7c398b280d020b435e43a"
 NOTICE_NAME = "THIRD-PARTY-NOTICES.txt"
 MIT_NOTICE = """The MIT License (MIT)
 
@@ -40,37 +33,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE."""
 
 
-class RejectRedirects(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, request, response, code, message, headers, new_url):
-        raise AssertionError(f"archive redirect rejected: {code} {new_url}")
-
-
-def test_discover_and_validate_the_exact_immutable_upstream_archive():
-    request = urllib.request.Request(
-        ARCHIVE_URL,
-        headers={"Accept": "application/x-gzip", "User-Agent": "valheim-webmap-provenance-test"},
-    )
-    with urllib.request.build_opener(RejectRedirects).open(request, timeout=60) as response:
-        assert response.status == 200
-        assert response.geturl() == ARCHIVE_URL
-        assert response.headers.get_content_type() in {
-            "application/x-gzip", "application/gzip", "application/octet-stream"
-        }
-        archive = response.read()
-    digest = hashlib.sha256(archive).hexdigest()
-    assert digest == ARCHIVE_SHA256, f"exact upstream archive sha256={digest}"
-    expected_root = f"websocket-sharp-{UPSTREAM_COMMIT}"
-    with tarfile.open(fileobj=io.BytesIO(archive), mode="r:gz") as source:
-        for member in source.getmembers():
-            normalized = posixpath.normpath(member.name)
-            assert not member.name.startswith("/")
-            assert normalized != ".." and not normalized.startswith("../")
-            assert normalized == expected_root or normalized.startswith(expected_root + "/")
-            assert not member.issym() and not member.islnk()
-        assert source.getmember(f"{expected_root}/websocket-sharp/websocket-sharp.csproj").isfile()
-        assert source.getmember(f"{expected_root}/LICENSE.txt").isfile()
-
-
 def test_opaque_repository_dll_is_not_a_canonical_dependency_input():
     assert not OPAQUE_WEBSOCKET.exists()
 
@@ -80,7 +42,7 @@ def test_docker_image_acquires_only_the_exact_hash_locked_source_archive():
     for required in (
         ARCHIVE_URL, ARCHIVE_SHA256, "sha256sum --check --strict", "--max-redirs 0",
         "application/x-gzip", "websocket-sharp/websocket-sharp.csproj", "tarfile.open",
-        "member.issym()", "member.islnk()", "mono-devel",
+        "member.issym()", "member.islnk()", "mono-devel=6.8.0.105+dfsg-3.3+deb12u1",
     ):
         assert required in dockerfile
     assert "github.com/sta/websocket-sharp/archive/refs/heads" not in dockerfile
@@ -190,7 +152,7 @@ def test_changelog_274_records_source_build_without_removed_route_claims():
     for required in (
         "aggregate-only", "per-player", "chat", "ping", "pin", "bound", "map digest",
         "cache", "headers", "config", "webhook", "main thread", "teardown", NOTICE_NAME.lower(),
-        "source", "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1",
+        "source", UPSTREAM_COMMIT,
     ):
         assert required in section
     assert "/messages" not in section

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 output="WebMap/bin/Release/net48"
-expected_hash="33c2b65512e71a0c05cbe1c2f89343605653e5f7fada91885ba756b12121b244"
+source_built_dependency="${WEBSOCKET_SHARP_BUILD_OUTPUT:-/tmp/websocket-sharp-build/websocket-sharp.dll}"
+opaque_hash="33c2b65512e71a0c05cbe1c2f89343605653e5f7fada91885ba756b12121b244"
 notice_name="THIRD-PARTY-NOTICES.txt"
 
 mapfile -t entries < <(find "$output" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort)
@@ -12,6 +13,10 @@ fi
 mapfile -t dlls < <(find "$output" -maxdepth 1 -type f -name '*.dll' -print | sort)
 if [[ ${#dlls[@]} -ne 2 ]] || [[ ! -s "$output/WebMap.dll" ]] || [[ ! -s "$output/websocket-sharp.dll" ]]; then
     echo "privacy inspection failed: expected exactly two DLLs" >&2
+    exit 1
+fi
+if [[ ! -s "$source_built_dependency" ]] || ! cmp -s "$source_built_dependency" "$output/websocket-sharp.dll"; then
+    echo "privacy inspection failed: packaged websocket-sharp.dll is not the current source-build output" >&2
     exit 1
 fi
 
@@ -34,19 +39,42 @@ fi
 for required in \
     'https://github.com/sta/websocket-sharp' \
     '4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1' \
+    '310267b8fe24ab69e95c78425e24a3644cf4490693c7c398b280d020b435e43a' \
     'Permission is hereby granted, free of charge' \
     'THE SOFTWARE IS PROVIDED "AS IS"' \
-    'Exact binary-to-source-build provenance' \
-    'unverified'; do
+    'built from'; do
     if ! grep -Fq -- "$required" "$output/$notice_name"; then
         echo "privacy inspection failed: incomplete third-party notice" >&2
         exit 1
     fi
 done
-actual_hash="$(sha256sum "$output/websocket-sharp.dll" | awk '{print $1}')"
-if [[ "$actual_hash" != "$expected_hash" ]]; then
-    echo "privacy inspection failed: websocket-sharp.dll hash mismatch" >&2
+if grep -Eiq 'unverified|unresolved' "$output/$notice_name"; then
+    echo "privacy inspection failed: stale unresolved dependency provenance wording" >&2
     exit 1
+fi
+
+actual_hash="$(sha256sum "$output/websocket-sharp.dll" | awk '{print $1}')"
+if [[ "$actual_hash" == "$opaque_hash" ]]; then
+    echo "privacy inspection failed: websocket-sharp.dll must not match removed opaque repository DLL" >&2
+    exit 1
+fi
+assembly_metadata="$(monodis --assembly "$output/websocket-sharp.dll")"
+assembly_name="$(awk '$1 == "Name:" { print $2 }' <<<"$assembly_metadata")"
+assembly_version="$(awk '$1 == "Version:" { print $2 }' <<<"$assembly_metadata")"
+public_key_output="$(sn -T "$output/websocket-sharp.dll" 2>&1)"
+if [[ "$assembly_name" != "websocket-sharp" ]] || [[ "$assembly_version" != "1.0.2.29017" ]]; then
+    echo "privacy inspection failed: unexpected websocket-sharp assembly name/version" >&2
+    exit 1
+fi
+if ! grep -Fqi '5660b08a1845a91e' <<<"$public_key_output" || ! sn -vf "$output/websocket-sharp.dll" >/dev/null 2>&1; then
+    echo "privacy inspection failed: websocket-sharp strong name is missing or incompatible" >&2
+    exit 1
+fi
+artifact_size="$(stat -c '%s' "$output/websocket-sharp.dll")"
+toolchain="$(dpkg-query -W -f='${Version}' mono-devel)"
+echo "source-built websocket-sharp.dll: sha256=$actual_hash size=$artifact_size identity=websocket-sharp,Version=1.0.2.29017,PublicKeyToken=5660b08a1845a91e mono-devel=$toolchain"
+if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
+    echo "::notice file=docs/DEPENDENCY_PROVENANCE.md,line=1::source-built websocket-sharp.dll sha256=$actual_hash size=$artifact_size identity=websocket-sharp,Version=1.0.2.29017,PublicKeyToken=5660b08a1845a91e mono-devel=$toolchain"
 fi
 
 runtime_sources=(WebMap/MapDataServer.cs WebMap/WebMap.cs WebMap/Config.cs)
