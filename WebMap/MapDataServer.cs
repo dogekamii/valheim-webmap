@@ -90,6 +90,14 @@ namespace WebMap
     {
         private const string ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
         private const int MaxPublicOnlineCount = 10000;
+        private const int MaxPrivatePinRecordLength = 512;
+        private const int MaxOwnerKeyLength = 128;
+        private const int MaxPinIdLength = 64;
+        private const int MaxPinTypeLength = 32;
+        private const int MaxLegacyNameLength = 64;
+        private const int MaxPublicPinTextLength = 80;
+        private const int MaxCoordinateTextLength = 32;
+        private const float MaxPinCoordinate = 12000f;
 
         private static readonly Dictionary<string, string> contentTypes = new Dictionary<string, string> {
             {"html", "text/html"}, {"js", "text/javascript"}, {"css", "text/css"},
@@ -369,7 +377,14 @@ namespace WebMap
             lock (pinSync)
             {
                 privatePins.Clear();
-                if (pins != null) privatePins.AddRange(pins);
+                if (pins != null)
+                {
+                    foreach (string pin in pins)
+                    {
+                        string[] parsed;
+                        if (TryParsePrivatePin(pin, out parsed)) privatePins.Add(pin);
+                    }
+                }
             }
             PublishPinSnapshot();
         }
@@ -417,7 +432,7 @@ namespace WebMap
                 {
                     string[] parts;
                     if (!TryParsePrivatePin(privatePins[i], out parts) || !string.Equals(parts[0], owner, StringComparison.Ordinal)) continue;
-                    if (text == null || string.Equals(parts[parts.Length - 1], text, StringComparison.Ordinal)) return i;
+                    if (text == null || string.Equals(parts[6], text, StringComparison.Ordinal)) return i;
                 }
             }
             return -1;
@@ -425,8 +440,9 @@ namespace WebMap
 
         public void AddPin(string owner, string pinId, string type, Vector3 position, string pinText)
         {
-            if (!IsValidOwnerKey(owner)) return;
-            string record = $"{owner},{pinId},{type},,{FixedValue(position.x)},{FixedValue(position.z)},{pinText}";
+            string record = $"{owner},{pinId},{type},,{FixedValue(position.x)},{FixedValue(position.z)},{pinText ?? string.Empty}";
+            string[] parsed;
+            if (!TryParsePrivatePin(record, out parsed)) return;
             lock (pinSync)
             {
                 privatePins.Add(record);
@@ -474,7 +490,57 @@ namespace WebMap
 
         internal static bool IsValidOwnerKey(string owner)
         {
-            return !string.IsNullOrWhiteSpace(owner) && owner.IndexOf(',') < 0 && owner.IndexOf('\r') < 0 && owner.IndexOf('\n') < 0;
+            return !string.IsNullOrWhiteSpace(owner) && IsSafeRecordField(owner, MaxOwnerKeyLength, false);
+        }
+
+        private static bool IsSafeRecordField(string value, int maxLength, bool allowEmpty)
+        {
+            if (value == null || value.Length > maxLength || (!allowEmpty && value.Length == 0)) return false;
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (value[i] == ',' || char.IsControl(value[i])) return false;
+            }
+            return true;
+        }
+
+        private static bool IsSafePinToken(string value, int maxLength)
+        {
+            if (string.IsNullOrEmpty(value) || value.Length > maxLength) return false;
+            for (int i = 0; i < value.Length; i++)
+            {
+                char character = value[i];
+                bool safe = (character >= 'a' && character <= 'z') ||
+                            (character >= 'A' && character <= 'Z') ||
+                            (character >= '0' && character <= '9') ||
+                            character == '-' || character == '_' || character == '.';
+                if (!safe) return false;
+            }
+            return true;
+        }
+
+        private static bool IsSafeLegacyName(string value)
+        {
+            return IsSafeRecordField(value, MaxLegacyNameLength, true);
+        }
+
+        private static bool IsSafePublicPinText(string value)
+        {
+            return IsSafeRecordField(value, MaxPublicPinTextLength, true);
+        }
+
+        private static bool TryParseCoordinate(string value, out float coordinate)
+        {
+            coordinate = 0f;
+            if (string.IsNullOrEmpty(value) || value.Length > MaxCoordinateTextLength ||
+                !string.Equals(value, value.Trim(), StringComparison.Ordinal)) return false;
+            NumberStyles style = NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint;
+            if (!float.TryParse(value, style, CultureInfo.InvariantCulture, out coordinate) ||
+                float.IsNaN(coordinate) || float.IsInfinity(coordinate) || Math.Abs(coordinate) > MaxPinCoordinate)
+            {
+                coordinate = 0f;
+                return false;
+            }
+            return true;
         }
 
         private static bool TryGetPinOwner(string record, out string owner)
@@ -492,9 +558,16 @@ namespace WebMap
         private static bool TryParsePrivatePin(string record, out string[] pinParts)
         {
             pinParts = null;
-            if (string.IsNullOrWhiteSpace(record) || record.IndexOf('\r') >= 0 || record.IndexOf('\n') >= 0) return false;
+            if (string.IsNullOrWhiteSpace(record) || record.Length > MaxPrivatePinRecordLength ||
+                record.IndexOf('\r') >= 0 || record.IndexOf('\n') >= 0) return false;
             string[] parts = record.Split(',');
-            if (parts.Length < 7 || !IsValidOwnerKey(parts[0])) return false;
+            if (parts.Length != 7 || !IsValidOwnerKey(parts[0]) ||
+                !IsSafePinToken(parts[1], MaxPinIdLength) ||
+                !IsSafePinToken(parts[2], MaxPinTypeLength) ||
+                !IsSafeLegacyName(parts[3]) || !IsSafePublicPinText(parts[6])) return false;
+            float x;
+            float z;
+            if (!TryParseCoordinate(parts[4], out x) || !TryParseCoordinate(parts[5], out z)) return false;
             pinParts = parts;
             return true;
         }
@@ -507,7 +580,7 @@ namespace WebMap
             PublicIdentityValue identity = PublicIdentity.ForOwner(pinParts[0]);
             serialized = string.Join(",", new[] {
                 identity.Id.ToString(CultureInfo.InvariantCulture), pinParts[1], pinParts[2], identity.Alias,
-                pinParts[4], pinParts[5], pinParts[pinParts.Length - 1]
+                pinParts[4], pinParts[5], pinParts[6]
             });
             return true;
         }
