@@ -83,12 +83,21 @@
             return null;
         }
 
+        if (image) {
+            // Browser image fetches are restricted to URL-path references on this
+            // WebMap origin. Spaces/control substitutions, backslashes, schemes,
+            // and protocol-relative URLs are all rejected rather than normalized.
+            if (/\s|\\/.test(target) || /^\/\//.test(target) || /^[a-z][a-z0-9+.-]*:/i.test(target)) {
+                return null;
+            }
+            return escapeAttribute(target);
+        }
+
         var compact = target.replace(/[\u0000-\u0020]+/g, '');
         var match = compact.match(/^([a-z][a-z0-9+.-]*):/i);
         if (match) {
             var scheme = match[1].toLowerCase();
-            var allowed = image ? ['http', 'https'] : ['http', 'https', 'mailto'];
-            if (allowed.indexOf(scheme) === -1) {
+            if (['http', 'https', 'mailto'].indexOf(scheme) === -1) {
                 return null;
             }
         }

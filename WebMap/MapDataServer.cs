@@ -50,6 +50,11 @@ namespace WebMap
 
     public class MapDataServer
     {
+        // 'self' limits HTTP(S) and WS(S) connections to the WebMap origin.
+        // data: is required only for the bundled favicon; inline styles are
+        // required by the renderer, while scripts remain external-only.
+        private const string ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+
         private static readonly Dictionary<string, string> contentTypes = new Dictionary<string, string> {
             {"html", "text/html"},
             {"js", "text/javascript"},
@@ -126,11 +131,20 @@ namespace WebMap
             httpServer.OnGet += (sender, e) =>
             {
                 HttpListenerRequest req = e.Request;
+                ApplySecurityHeaders(e.Response);
 
                 if (ProcessSpecialRoutes(e)) return;
 
                 ServeStaticFiles(e);
             };
+        }
+
+        private static void ApplySecurityHeaders(HttpListenerResponse res)
+        {
+            res.Headers.Add("X-Content-Type-Options", "nosniff");
+            res.Headers.Add("Referrer-Policy", "no-referrer");
+            res.Headers.Add("X-Frame-Options", "DENY");
+            res.Headers.Add("Content-Security-Policy", ContentSecurityPolicy);
         }
 
         public string getPlayerResponse(bool sendLast)

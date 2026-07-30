@@ -9,7 +9,9 @@ namespace WebMap
 {
     internal static class QuorumActivityJournal
     {
-        private const uint JournalFileMode = 0x180; // 0600: owner read/write only
+        // 0640 for AMP's 1000:1000 writer: owner read/write and designated group read.
+        // The bot runs separately as 99:100 and must be granted supplemental group 1000.
+        private const uint JournalFileMode = 0x1A0;
 
         [DllImport("libc", SetLastError = true)]
         private static extern int chmod(string path, uint mode);
