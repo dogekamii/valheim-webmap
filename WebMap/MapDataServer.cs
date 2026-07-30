@@ -442,6 +442,7 @@ namespace WebMap
             string record = $"{owner},{pinId},{type},,{FixedValue(position.x)},{FixedValue(position.z)},{pinText ?? string.Empty}";
             string[] parsed;
             if (!TryParsePrivatePin(record, out parsed)) return;
+            string publicPin;
             lock (pinSync)
             {
                 if (privatePins.Count >= MaxPrivatePins) return;
@@ -449,14 +450,11 @@ namespace WebMap
                 PublicIdentityValue identity;
                 if (!PublicIdentity.TryForOwner(parsed[0], out identity)) return;
                 privatePins.Add(record);
+                publicPin = SerializePublicPin(parsed, identity);
             }
             PublishPinSnapshot();
-            string publicPin;
-            if (TrySerializePublicPin(record, out publicPin))
-            {
-                string[] parts = publicPin.Split(',');
-                webSocketHandler.Sessions.Broadcast($"pin\n{parts[0]}\n{parts[1]}\n{parts[2]}\n{parts[3]}\n{parts[4]},{parts[5]}\n{parts[6]}");
-            }
+            string[] parts = publicPin.Split(',');
+            webSocketHandler.Sessions.Broadcast($"pin\n{parts[0]}\n{parts[1]}\n{parts[2]}\n{parts[3]}\n{parts[4]},{parts[5]}\n{parts[6]}");
         }
 
         public void RemovePin(int idx)
@@ -553,9 +551,11 @@ namespace WebMap
             if (!TryParsePrivatePin(record, out pinParts) || pinParts.Length != 7) return false;
             PublicIdentityValue identity;
             if (!PublicIdentity.TryForOwner(pinParts[0], out identity)) return false;
-            serialized = string.Join(",", new[] { identity.Id.ToString(CultureInfo.InvariantCulture), pinParts[1], pinParts[2], identity.Alias, pinParts[4], pinParts[5], pinParts[6] });
+            serialized = SerializePublicPin(pinParts, identity);
             return true;
         }
+        private static string SerializePublicPin(string[] pinParts, PublicIdentityValue identity) =>
+            string.Join(",", new[] { identity.Id.ToString(CultureInfo.InvariantCulture), pinParts[1], pinParts[2], identity.Alias, pinParts[4], pinParts[5], pinParts[6] });
         private static string FixedValue(float value) => value.ToString("F2", CultureInfo.InvariantCulture);
     }
 }
