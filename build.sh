@@ -12,4 +12,4 @@ dotnet tool restore
 
 dotnet cake "$@"
 
-./scripts/inspect-release-privacy.py
+bash scripts/inspect-release-privacy.py
