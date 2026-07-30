@@ -24,19 +24,29 @@ def method_body(source, signature):
     raise AssertionError(f"unterminated method: {signature}")
 
 
-def test_public_identity_is_process_ephemeral_random_js_safe_and_generic():
+def test_public_identity_is_process_ephemeral_js_safe_and_used_only_for_pin_owners():
     assert "internal static class PublicIdentity" in SERVER
     assert "RandomNumberGenerator.Create()" in SERVER
     assert "9007199254740991" in SERVER
     assert "HashSet<long>" in SERVER
     assert 'Alias = $"Player {aliasNumber}"' in SERVER
-    player_response = method_body(SERVER, "private string BuildPlayerSnapshot")
-    assert "PublicIdentity.ForPeer(player.m_uid)" in player_response
-    assert "player.m_playerName" not in player_response
-    for signature in ("public MapMessage(long id", "public void BroadcastPing", "public void BroadcastMessage"):
-        body = method_body(SERVER, signature)
-        assert "PublicIdentity.ForPeer" in body
-        assert "\\n{name}" not in body
+    serializer = method_body(SERVER, "private static bool TrySerializePublicPin")
+    assert "PublicIdentity.ForOwner" in serializer
+    player_snapshot = method_body(SERVER, "private string BuildPlayerSnapshot")
+    assert "PublicIdentity" not in player_snapshot
+    assert "Alias" not in player_snapshot
+    assert "m_uid" not in player_snapshot
+    assert "m_playerName" not in player_snapshot
+
+
+def test_no_public_chat_message_or_ping_protocol_exists():
+    combined = SERVER + WEBMAP
+    for forbidden in (
+        "struct MapMessage", "BroadcastMessage", "BroadcastPing", "AddMessage(",
+        'case "/messages"', 'Broadcast("message', 'Broadcast("messages',
+        'Broadcast("ping', "sentMessages", "newMessages",
+    ):
+        assert forbidden not in combined
 
 
 def test_pin_authorization_uses_exact_validated_structured_owner():
@@ -73,7 +83,7 @@ def test_pin_commands_use_exact_case_insensitive_tokens_and_prefixes_stay_chat()
     assert '.ToUpper().StartsWith("!DELETEPIN")' not in routed
 
 
-def test_journal_is_name_free_and_join_leave_do_not_require_display_names():
+def test_journal_is_name_free_and_join_leave_never_add_public_messages():
     assert "m_playerName" not in JOURNAL
     for class_name in ("private class ZNetPatchDisconnect", "private class ZRoutedRpcAddPeerPatch"):
         patch = WEBMAP[WEBMAP.index(class_name):]
@@ -88,9 +98,10 @@ def test_journal_is_name_free_and_join_leave_do_not_require_display_names():
         body = method_body(WEBMAP, signature)
         assert text in body
         assert "peer.m_playerName" not in body
-        assert body.index(append) < body.index("mapDataServer.AddMessage")
-        if "SendDiscordNotification" in body:
-            assert body.index(append) < body.index("SendDiscordNotification")
+        assert "AddMessage" not in body
+        assert "BroadcastMessage" not in body
+        if "SendMessage" in body:
+            assert body.index(append) < body.index("SendMessage")
 
 
 def test_webhook_is_removed_or_https_validated_bounded_async_and_disposable():

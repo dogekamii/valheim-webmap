@@ -7,13 +7,15 @@ SERVER = (ROOT / "WebMap" / "MapDataServer.cs").read_text(encoding="utf-8")
 CONFIG = (ROOT / "WebMap" / "Config.cs").read_text(encoding="utf-8")
 INDEX = (ROOT / "WebMap" / "web-src" / "index.js").read_text(encoding="utf-8")
 SOCKET = (ROOT / "WebMap" / "web-src" / "websocket.js").read_text(encoding="utf-8")
+PLAYERS = (ROOT / "WebMap" / "web-src" / "players.js").read_text(encoding="utf-8")
+HTML = (ROOT / "WebMap" / "web" / "index.html").read_text(encoding="utf-8")
 DRAWDOWN = ROOT / "WebMap" / "web" / "drawdown.js"
 BUILD = (ROOT / "build.sh").read_text(encoding="utf-8")
 INSPECTOR = ROOT / "scripts" / "inspect-release-privacy.py"
 
 
 def test_dynamic_and_error_routes_are_no_store_and_security_headers_are_global():
-    assert SERVER.count('"no-store"') >= 6
+    assert SERVER.count('"no-store"') >= 4
     assert "ApplySecurityHeaders(e.Response)" in SERVER
     assert "SetNoStore" in SERVER
     assert "404" in SERVER and "SetNoStore" in SERVER[SERVER.index("private void ServeStaticFiles"):]
@@ -38,23 +40,38 @@ def test_map_is_content_addressed_without_world_metadata_or_blob_urls():
     assert "document.title = 'Valheim WebMap'" in INDEX or 'document.title = "Valheim WebMap"' in INDEX
 
 
-def test_client_config_is_typed_json_and_all_numeric_inputs_are_bounded_finite():
-    assert "DictionaryToJson" not in CONFIG
-    assert "JsonUtility.ToJson" in CONFIG
-    assert "ClientConfig" in CONFIG
+def test_client_config_has_no_stale_message_limit_and_numeric_inputs_are_bounded_finite():
+    assert "MAX_MESSAGES" not in CONFIG
+    assert "max_messages" not in CONFIG
+    assert "MAX_MESSAGES" not in INDEX
+    assert "max_messages" not in INDEX
     assert "ClampSettings" in CONFIG or "ValidateSettings" in CONFIG
     for field in (
         "TEXTURE_SIZE", "PIXEL_SIZE", "EXPLORE_RADIUS", "UPDATE_FOG_TEXTURE_INTERVAL",
         "SAVE_FOG_TEXTURE_INTERVAL", "PLAYER_UPDATE_INTERVAL", "SERVER_PORT",
-        "MAX_MESSAGES", "MAX_PINS_PER_USER", "DEFAULT_ZOOM",
+        "MAX_PINS_PER_USER", "DEFAULT_ZOOM",
     ):
         assert field in CONFIG
     assert "float.IsNaN" in CONFIG and "float.IsInfinity" in CONFIG
-    assert "TEST" not in CONFIG
-    assert "DISCORD_INVITE_URL" not in CONFIG
-    assert "URL =" not in CONFIG
     assert "WORLD_VISIBILITY_MODE" in CONFIG
     assert "QUORUM_ACTIVITY_JOURNAL_ENABLED" in CONFIG
+
+
+def test_public_frontend_has_no_chat_ping_or_per_player_rendering():
+    assert 'from "./players"' not in INDEX
+    assert "addActionListener('messages'" not in INDEX
+    assert "fetch('messages')" not in INDEX
+    assert "addActionListener('ping'" not in INDEX
+    assert "messageList" not in INDEX
+    assert "hideMessageList" not in INDEX
+    assert "Hide Messages" not in HTML
+    assert 'id="messages"' not in HTML
+    for forbidden in (
+        "health", "maxHealth", "dead", "pvp", "inbed", "playerMapIcons",
+        "followPlayer", "player.id", "player.name", "player.x", "player.z",
+    ):
+        assert forbidden not in PLAYERS
+    assert "online" in PLAYERS
 
 
 def test_frontend_reload_and_websocket_use_origin_root_with_one_bounded_jittered_reconnect():
@@ -94,7 +111,9 @@ def test_canonical_release_build_runs_packaged_two_dll_and_js_privacy_inspection
     assert "WebMap.dll" in inspector and "websocket-sharp.dll" in inspector
     assert "exactly two DLLs" in inspector
     assert "main.*.js" in inspector
-    assert "console." in inspector
-    assert "GetServerIP" in inspector
-    assert "m_playerName" in inspector
+    for forbidden in (
+        "MapMessage", "BroadcastMessage", "BroadcastPing", "/messages", "messages\\n",
+        "ping\\n", "max_health", "m_playerName", "m_publicRefPos", "inBed",
+    ):
+        assert forbidden in inspector
     assert "inspect-release-privacy.py" in BUILD

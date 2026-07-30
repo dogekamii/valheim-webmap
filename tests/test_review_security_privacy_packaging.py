@@ -126,11 +126,13 @@ def test_websocket_connection_log_does_not_collect_remote_endpoints():
     assert "new visitor connected from" not in server
 
 
-def test_messages_route_uses_the_json_content_type():
+def test_messages_route_is_not_public():
     server = SERVER.read_text(encoding="utf-8")
 
-    assert 'res.ContentType = "application/json";' in server
-    assert "applicaion/json" not in server
+    assert 'case "/messages"' not in server
+    assert "MapMessage" not in server
+    assert "BroadcastMessage" not in server
+    assert "sentMessages" not in server
 
 
 def test_http_security_headers_cover_special_static_and_error_responses():
