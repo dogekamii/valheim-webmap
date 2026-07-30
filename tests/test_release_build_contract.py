@@ -18,7 +18,7 @@ def test_canonical_release_runs_browser_dependency_and_webmap_builds_in_order():
     assert 'NpmRunScript("build")' in build_cake
     assert "scripts/package-release.js" in build_cake
     assert "scripts/inspect-release-privacy.sh" in build_cake
-    assert "Build release output" in workflow
+    assert "Build canonical installable release archive" in workflow
     assert "docker build --build-arg BEPINEX_RELEASE=" in workflow
     assert "webmap-release-build" in workflow
     assert "./build.sh --configuration Release" in workflow
@@ -65,19 +65,27 @@ def test_webmap_compiles_against_only_the_current_source_build_output():
     assert "libs\\websocket-sharp.dll" not in (repo / "WebMap" / "WebMap.csproj").read_text()
 
 
-def test_package_contract_remains_exactly_four_files_and_two_dlls():
+def test_release_contract_inspects_the_installable_archive_not_compiler_staging():
     packager = (repo / "scripts" / "package-release.js").read_text()
-    inspector = (repo / "scripts" / "inspect-release-privacy.sh").read_text()
+    inspector = (repo / "scripts" / "inspect-release-archive.py").read_text()
+    privacy = (repo / "scripts" / "inspect-release-privacy.sh").read_text()
+    workflow = (repo / ".github" / "workflows" / "tests.yml").read_text()
     for required in (
-        '"WebMap.dll"', '"websocket-sharp.dll"', '"THIRD-PARTY-NOTICES.txt"',
-        r"/^main\.[0-9a-f]{16}\.js$/", "actual.length !== 4", "fs.rmSync",
+        "dist/valheim-webmap-2.7.4.zip", "WebMap/WebMap.dll",
+        "WebMap/websocket-sharp.dll", "WebMap/THIRD-PARTY-NOTICES.txt",
+        "WebMap/web/index.html", "WebMap/web/style.css",
+        "WebMap/web/mapIcons.png", "WebMap/web/tile.webp",
     ):
         assert required in packager
-    assert "expected exactly four release files" in inspector
-    assert "expected exactly two DLLs" in inspector
-    assert "sha256sum" in inspector
-    assert "release privacy inspection passed" in inspector
-    workflow = (repo / ".github" / "workflows" / "tests.yml").read_text()
-    assert "test -s WebMap/bin/Release/net48/WebMap.dll" in workflow
-    assert "test -s WebMap/bin/Release/net48/websocket-sharp.dll" in workflow
-    assert "test ! -e WebMap/web/main.js" in workflow
+    for required in (
+        "duplicate archive member", "archive member allowlist mismatch",
+        "exactly two runtime DLLs", "bundle filename does not match",
+        "stylesheet asset graph", "source-built output", "compiler staging output",
+    ):
+        assert required in inspector
+    assert "release archive privacy inspection passed" in privacy
+    assert "Inspect canonical release archive" in workflow
+    assert "python3 scripts/inspect-release-archive.py" in workflow
+    assert "test -s dist/valheim-webmap-2.7.4.zip" in workflow
+    assert "Reject compile-only DLLs from compiler staging output" in workflow
+    assert "ref: ${{ github.event.pull_request.head.sha || github.sha }}" in workflow

@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.11.15'
@@ -34,17 +36,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Build release image
         run: docker build --build-arg BEPINEX_RELEASE=5.4.23.2 --tag webmap-release-build .
-      - name: Build release output
+      - name: Build canonical installable release archive
         run: docker run --rm --volume "$PWD:/build" --workdir /build webmap-release-build ./build.sh --configuration Release
-      - name: Verify release build output
+      - name: Inspect canonical release archive
         run: |
-          test -s WebMap/bin/Release/net48/WebMap.dll
-          test -s WebMap/bin/Release/net48/websocket-sharp.dll
-          test -n "$(find WebMap/web -maxdepth 1 -name 'main.*.js' -size +0c -print -quit)"
-          test ! -e WebMap/web/main.js
-      - name: Reject compile-only DLLs from release output
+          test -s dist/valheim-webmap-2.7.4.zip
+          python3 scripts/inspect-release-archive.py dist/valheim-webmap-2.7.4.zip --compiler-output WebMap/bin/Release/net48
+      - name: Reject compile-only DLLs from compiler staging output
         run: |
           unexpected="$(find WebMap/bin/Release/net48 -maxdepth 1 -type f -name '*.dll' ! -name 'WebMap.dll' ! -name 'websocket-sharp.dll' -print -quit)"
           test -z "$unexpected"

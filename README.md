@@ -35,15 +35,14 @@ The v2.7.4 source candidate retains guarded current-Valheim world-setup startup,
 
 ## Installation
 
+The canonical source-build command creates `dist/valheim-webmap-2.7.4.zip`. `WebMap/bin/Release/net48/` is compiler staging output, not the release product.
+
 1. Install a Valheim-compatible BepInEx loader. For the validated AMP baseline, use BepInExPack Valheim and preserve the host's Doorstop/environment configuration.
-2. Obtain the canonical v2.7.4 release payload. It contains exactly four files:
-   - `WebMap.dll`
-   - `websocket-sharp.dll`
-   - one `main.<16 lowercase hex>.js`
-   - `THIRD-PARTY-NOTICES.txt`
-3. Stop the dedicated server. Copy the complete payload into its WebMap plugin installation, preserving the hashed JavaScript filename and bundled notice. Do not copy PDBs, configuration files, saved map data, or additional DLLs from a build workspace.
-4. Start the server once so it creates operator configuration, then stop it before editing settings. Runtime edits can be overwritten during shutdown.
-5. Restrict the raw listener to a trusted network. For any public exposure, use an **HTTPS reverse proxy** that forwards normal HTTP and WebSocket upgrades. Do not expose the raw listener directly to the Internet.
+2. Obtain the canonical v2.7.4 ZIP and verify its published SHA-256, size, and member list from the authoritative release job.
+3. Stop the dedicated server. Extract the archive into `BepInEx/plugins/`; it contains one top-level `WebMap/` plugin directory with `WebMap.dll`, source-built `websocket-sharp.dll`, `THIRD-PARTY-NOTICES.txt`, and the required `web/` tree. Preserve that layout because the runtime resolves `web/index.html` beside `WebMap.dll`.
+4. Do not add PDBs, configuration files, saved `map_data`, stale bundles, source files, or additional DLLs to the plugin directory.
+5. Start the server once so it creates operator configuration, then stop it before editing settings. Runtime edits can be overwritten during shutdown.
+6. Restrict the raw listener to a trusted network. For any public exposure, use an **HTTPS reverse proxy** that forwards normal HTTP and WebSocket upgrades. Do not expose the raw listener directly to the Internet.
 
 See [reverse-proxy guidance](docs/REVERSE_PROXY.md) for an example that does not disclose deployment-specific addresses.
 
@@ -69,9 +68,9 @@ Activity collection, account linking, and RSVP eligibility are separate concerns
 
 ## Updating
 
-1. Stop the dedicated server and back up operator configuration and map state outside the replacement directory.
-2. Verify the new release contains exactly the four files listed above. Verify that `websocket-sharp.dll` matches the source-built artifact facts published by the authoritative release job and [dependency provenance](docs/DEPENDENCY_PROVENANCE.md), and retain the notice unchanged.
-3. Remove the previous release payload, then install the complete replacement. Do not preserve an unhashed `main.js`, stale hashed bundles, PDBs, extra DLLs, generated configuration, or private data in the release directory.
+1. Stop the dedicated server and back up operator configuration and map state outside `BepInEx/plugins/WebMap/`.
+2. Verify the replacement ZIP's SHA-256, size, and complete member list. Verify that its `websocket-sharp.dll` matches the source-built artifact facts published by the authoritative release job and [dependency provenance](docs/DEPENDENCY_PROVENANCE.md).
+3. Remove the previous `BepInEx/plugins/WebMap/` directory, then extract the complete replacement ZIP into `BepInEx/plugins/`. Do not preserve an unhashed `main.js`, stale hashed bundles, PDBs, extra DLLs, generated configuration, private data, or files omitted from the archive allowlist.
 4. Restart the dedicated server and confirm startup through the ordinary BepInEx log without publishing private endpoints or paths.
 5. Confirm the HTTPS entrypoint and WebSocket upgrade through the reverse proxy. A hard refresh should retrieve the current content-addressed bundle.
 

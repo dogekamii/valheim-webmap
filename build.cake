@@ -15,6 +15,7 @@ var websocketBuildPath = System.IO.Path.Combine(tempDir, "websocket-sharp-build"
 var websocketIntermediatePath = System.IO.Path.Combine(websocketBuildPath, "obj");
 var websocketAssemblyPath = System.IO.Path.Combine(websocketBuildPath, "websocket-sharp.dll");
 var websocketCommit = "4cbd1e0ccdbf9f5cb322a7c14e3c84e19db5dee1";
+var releaseArchivePath = "dist/valheim-webmap-2.7.4.zip";
 
 int RunCheckedBuildCommand(string stepName, string command)
 {
@@ -124,20 +125,20 @@ var BuildTask = Task("Build")
     {
         var packageExitCode = RunCheckedBuildCommand(
             "release packager",
-            $"node scripts/package-release.js WebMap/bin/Release/net48 WebMap/web THIRD-PARTY-NOTICES.txt \"{websocketAssemblyPath}\""
+            $"node scripts/package-release.js WebMap/bin/Release/net48 WebMap/web THIRD-PARTY-NOTICES.txt \"{websocketAssemblyPath}\" dist"
         );
         if (packageExitCode != 0)
         {
-            throw new Exception("Canonical four-file release packaging failed.");
+            throw new Exception("Canonical installable release archive packaging failed.");
         }
 
         var inspectionExitCode = RunCheckedBuildCommand(
             "release privacy inspector",
-            "bash scripts/inspect-release-privacy.sh"
+            $"bash scripts/inspect-release-privacy.sh {releaseArchivePath}"
         );
         if (inspectionExitCode != 0)
         {
-            throw new Exception("Release privacy inspection failed.");
+            throw new Exception("Release archive privacy inspection failed.");
         }
     }
 });

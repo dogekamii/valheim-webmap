@@ -1,33 +1,38 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
 const root = path.resolve(__dirname, "..");
-const output = path.resolve(root, process.argv[2] || "WebMap/bin/Release/net48");
+const compilerOutput = path.resolve(root, process.argv[2] || "WebMap/bin/Release/net48");
 const web = path.resolve(root, process.argv[3] || "WebMap/web");
 const noticeSource = path.resolve(root, process.argv[4] || "THIRD-PARTY-NOTICES.txt");
 const sourceBuiltDependency = path.resolve(process.argv[5] || "/tmp/websocket-sharp-build/websocket-sharp.dll");
+const dist = path.resolve(root, process.argv[6] || "dist");
+const archivePath = path.join(dist, "valheim-webmap-2.7.4.zip");
+const stagingRoot = path.join(dist, ".staging");
+const pluginRoot = path.join(stagingRoot, "WebMap");
+const pluginWeb = path.join(pluginRoot, "web");
 const noticeName = "THIRD-PARTY-NOTICES.txt";
+const nonGeneratedWebFiles = ["index.html", "style.css", "mapIcons.png", "tile.webp"];
 const fail = message => { throw new Error(`release packaging failed: ${message}`); };
-const sha256 = file => crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+const regularNonEmpty = file => {
+    if (!fs.existsSync(file)) return false;
+    const stat = fs.lstatSync(file);
+    return stat.isFile() && !stat.isSymbolicLink() && stat.size > 0;
+};
 const sameFile = (left, right) => {
-    if (!fs.existsSync(left) || !fs.existsSync(right)) return false;
+    if (!regularNonEmpty(left) || !regularNonEmpty(right)) return false;
     const leftData = fs.readFileSync(left);
     const rightData = fs.readFileSync(right);
     return leftData.length === rightData.length && crypto.timingSafeEqual(leftData, rightData);
 };
 
-if (!fs.statSync(output).isDirectory()) fail("release output is missing");
-if (!fs.existsSync(sourceBuiltDependency) || !fs.statSync(sourceBuiltDependency).isFile() || fs.statSync(sourceBuiltDependency).size === 0) {
-    fail("current source-built websocket-sharp.dll is missing or empty");
-}
+if (!fs.existsSync(compilerOutput) || !fs.statSync(compilerOutput).isDirectory()) fail("compiler staging output is missing");
 for (const dll of ["WebMap.dll", "websocket-sharp.dll"]) {
-    const file = path.join(output, dll);
-    if (!fs.existsSync(file) || !fs.statSync(file).isFile() || fs.statSync(file).size === 0) {
-        fail(`${dll} is missing or empty`);
-    }
+    if (!regularNonEmpty(path.join(compilerOutput, dll))) fail(`${dll} is missing or empty in compiler staging output`);
 }
-if (!sameFile(path.join(output, "websocket-sharp.dll"), sourceBuiltDependency)) {
+if (!sameFile(path.join(compilerOutput, "websocket-sharp.dll"), sourceBuiltDependency)) {
     fail("source-built websocket-sharp.dll does not match the WebMap CopyLocal output");
 }
 
@@ -35,7 +40,16 @@ const bundles = fs.readdirSync(web).filter(name => /^main\.[0-9a-f]{16}\.js$/.te
 if (bundles.length !== 1 || fs.existsSync(path.join(web, "main.js"))) {
     fail("expected one 16-lowercase-hex main bundle and no main.js");
 }
-if (!fs.existsSync(noticeSource) || !fs.statSync(noticeSource).isFile()) fail("third-party notice is missing");
+const bundle = bundles[0];
+if (!regularNonEmpty(path.join(web, bundle))) fail("generated main bundle is empty or not a regular file");
+for (const name of nonGeneratedWebFiles) {
+    if (!regularNonEmpty(path.join(web, name))) fail(`required static file ${name} is missing or empty`);
+}
+const index = fs.readFileSync(path.join(web, "index.html"), "utf8");
+if (!index.includes(`<script src="${bundle}"></script>`) || /<script\s+src=["']main\.js["']/.test(index)) {
+    fail("index.html does not reference exactly the generated hashed bundle");
+}
+if (!regularNonEmpty(noticeSource)) fail("third-party notice is missing");
 const notice = fs.readFileSync(noticeSource, "utf8");
 for (const required of [
     "https://github.com/sta/websocket-sharp",
@@ -49,25 +63,34 @@ for (const required of [
 }
 if (/unverified/i.test(notice)) fail("third-party notice retains unresolved binary provenance wording");
 
-const preserved = new Set(["WebMap.dll", "websocket-sharp.dll"]);
-for (const entry of fs.readdirSync(output)) {
-    if (!preserved.has(entry)) fs.rmSync(path.join(output, entry), {recursive: true, force: true});
-}
-fs.copyFileSync(path.join(web, bundles[0]), path.join(output, bundles[0]));
-fs.copyFileSync(noticeSource, path.join(output, noticeName));
-
-const expected = [noticeName, "WebMap.dll", bundles[0], "websocket-sharp.dll"].sort();
-const actual = fs.readdirSync(output).sort();
-if (actual.length !== 4 || actual.some((name, index) => name !== expected[index])) {
-    fail("canonical package must contain exactly four allowed files");
-}
-for (const name of actual) {
-    const stat = fs.statSync(path.join(output, name));
-    if (!stat.isFile() || stat.size === 0) fail(`${name} is not a non-empty regular file`);
-}
-if (!sameFile(path.join(output, "websocket-sharp.dll"), sourceBuiltDependency)) {
-    fail("source-built websocket-sharp.dll does not match the packaged dependency");
+fs.rmSync(stagingRoot, { recursive: true, force: true });
+fs.rmSync(archivePath, { force: true });
+fs.mkdirSync(pluginWeb, { recursive: true });
+fs.copyFileSync(path.join(compilerOutput, "WebMap.dll"), path.join(pluginRoot, "WebMap.dll"));
+fs.copyFileSync(path.join(compilerOutput, "websocket-sharp.dll"), path.join(pluginRoot, "websocket-sharp.dll"));
+fs.copyFileSync(noticeSource, path.join(pluginRoot, noticeName));
+for (const name of [...nonGeneratedWebFiles, bundle]) {
+    fs.copyFileSync(path.join(web, name), path.join(pluginWeb, name));
 }
 
-console.log(`canonical release package verified: ${actual.join(", ")}`);
-console.log(`source-built websocket-sharp.dll SHA-256: ${sha256(sourceBuiltDependency)}`);
+const archiveMembers = [
+    "WebMap/WebMap.dll",
+    "WebMap/websocket-sharp.dll",
+    "WebMap/THIRD-PARTY-NOTICES.txt",
+    "WebMap/web/index.html",
+    "WebMap/web/style.css",
+    "WebMap/web/mapIcons.png",
+    "WebMap/web/tile.webp",
+    `WebMap/web/${bundle}`,
+];
+const writer = path.join(root, "scripts", "create-release-archive.py");
+const result = spawnSync("python3", [writer, stagingRoot, archivePath, ...archiveMembers], {
+    cwd: root,
+    stdio: "inherit",
+});
+if (result.status !== 0) fail("deterministic archive creation failed");
+if (!regularNonEmpty(archivePath)) fail("installable release archive is missing or empty");
+if (!sameFile(path.join(pluginRoot, "websocket-sharp.dll"), sourceBuiltDependency)) {
+    fail("source-built websocket-sharp.dll does not match the staged install dependency");
+}
+console.log(`canonical installable release archive created: ${path.relative(root, archivePath)}`);
