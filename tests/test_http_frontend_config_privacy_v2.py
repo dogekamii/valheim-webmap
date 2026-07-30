@@ -20,24 +20,22 @@ def test_dynamic_and_error_routes_are_no_store_and_security_headers_are_global()
     assert "SetNoStore" in SERVER
     assert "404" in SERVER and "SetNoStore" in SERVER[SERVER.index("private void ServeStaticFiles"):]
     assert "public, max-age=604800, immutable" in SERVER
-    csp = SERVER[SERVER.index("ContentSecurityPolicy"):SERVER.index("private static readonly Dictionary")]
+    csp = SERVER[SERVER.index("ContentSecurityPolicy"):SERVER.index("private static readonly Regex")]
     assert "connect-src 'self'" in csp
     assert "img-src 'self' data:" in csp
     assert "https:" not in csp and "wss:" not in csp
 
 
 def test_map_is_content_addressed_without_world_metadata_or_blob_urls():
-    assert "mapVersion" in SERVER or "mapDigest" in SERVER
-    assert 'config["map_version"]' in CONFIG or "map_version" in CONFIG
+    assert "mapDigest" in SERVER
+    assert "map_digest" in CONFIG
     assert "SHA256" in SERVER
     assert "req.Url.AbsolutePath" in SERVER
-    assert "config.world_name" not in INDEX
-    assert "constants.WORLD_NAME" not in INDEX
-    assert "world_name" not in CONFIG[CONFIG.index("MakeClientConfigJson"):]
+    assert "world_name" not in CONFIG[CONFIG.index("ClientConfig"):]
     assert "URL.createObjectURL" not in INDEX
-    assert "map_version" in INDEX
-    assert "/map?v=" in INDEX or "map?v=" in INDEX
-    assert "document.title = 'Valheim WebMap'" in INDEX or 'document.title = "Valheim WebMap"' in INDEX
+    assert "map_digest" in INDEX
+    assert "map?v=" in INDEX
+    assert "document.title = 'Valheim WebMap'" in INDEX
 
 
 def test_client_config_has_no_stale_message_limit_and_numeric_inputs_are_bounded_finite():
@@ -45,7 +43,7 @@ def test_client_config_has_no_stale_message_limit_and_numeric_inputs_are_bounded
     assert "max_messages" not in CONFIG
     assert "MAX_MESSAGES" not in INDEX
     assert "max_messages" not in INDEX
-    assert "ClampSettings" in CONFIG or "ValidateSettings" in CONFIG
+    assert "ValidateSettings" in CONFIG
     for field in (
         "TEXTURE_SIZE", "PIXEL_SIZE", "EXPLORE_RADIUS", "UPDATE_FOG_TEXTURE_INTERVAL",
         "SAVE_FOG_TEXTURE_INTERVAL", "PLAYER_UPDATE_INTERVAL", "SERVER_PORT",

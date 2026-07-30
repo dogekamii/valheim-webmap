@@ -6,6 +6,7 @@ using System.IO;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using UnityEngine;
 using WebSocketSharp;
 using WebSocketSharp.Net;
@@ -76,7 +77,15 @@ namespace WebMap
 
     public class MapDataServer
     {
+        private sealed class MapPublication
+        {
+            internal readonly byte[] Bytes;
+            internal readonly string Digest;
+            internal MapPublication(byte[] bytes, string digest) { Bytes = bytes; Digest = digest; }
+        }
+
         private const string ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'";
+        private const string ImmutableCacheControl = "public, max-age=604800, immutable";
         private const int MaxPublicOnlineCount = 10000;
         private const int MaxPrivatePinRecordLength = 512;
         private const int MaxOwnerKeyLength = 128;
@@ -86,6 +95,7 @@ namespace WebMap
         private const int MaxPublicPinTextLength = 80;
         private const int MaxCoordinateTextLength = 32;
         private const float MaxPinCoordinate = 12000f;
+        private static readonly Regex HashedMainScript = new Regex("^main\\.[0-9a-f]{16}\\.js$", RegexOptions.CultureInvariant);
         private static readonly Dictionary<string, string> contentTypes = new Dictionary<string, string> {
             {"html", "text/html"}, {"js", "text/javascript"}, {"css", "text/css"},
             {"png", "image/png"}, {"jpg", "image/jpeg"}, {"webp", "image/webp"}
@@ -105,9 +115,9 @@ namespace WebMap
         private volatile bool forceReload;
         private volatile string playerSnapshot = "players\n{\"online\":0}";
         private volatile byte[] configSnapshot = Encoding.UTF8.GetBytes("{}");
-        private volatile byte[] mapSnapshot = new byte[0];
         private volatile byte[] pinSnapshot = new byte[0];
         private volatile byte[] fogSnapshot = new byte[0];
+        private volatile MapPublication mapPublication;
         public Texture2D fogTexture;
         public List<ZNetPeer> players = new List<ZNetPeer>();
 
@@ -116,6 +126,7 @@ namespace WebMap
             this.owner = owner;
             __instance = this;
             publicRoot = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? string.Empty, "web");
+            configSnapshot = Encoding.UTF8.GetBytes(MakeClientConfigJson(string.Empty));
             httpServer = new HttpServer(SERVER_PORT);
             httpServer.AddWebSocketService<WebSocketHandler>("/");
             httpServer.KeepClean = true;
@@ -123,19 +134,31 @@ namespace WebMap
             httpServer.OnGet += (sender, e) =>
             {
                 ApplySecurityHeaders(e.Response);
-                if (!ProcessSpecialRoutes(e)) ServeStaticFiles(e);
+                SetNoStore(e.Response);
+                try
+                {
+                    if (!ProcessSpecialRoutes(e)) ServeStaticFiles(e);
+                }
+                catch
+                {
+                    ZLog.LogError("WebMap: HTTP request failed");
+                    SetNoStore(e.Response);
+                    e.Response.StatusCode = 500;
+                    e.Response.Close();
+                }
             };
             publicationCoroutine = owner.StartCoroutine(PublishSnapshotsOnMainThread());
         }
 
         private static void ApplySecurityHeaders(HttpListenerResponse res)
         {
-            res.Headers.Add("X-Content-Type-Options", "nosniff");
-            res.Headers.Add("Referrer-Policy", "no-referrer");
-            res.Headers.Add("X-Frame-Options", "DENY");
-            res.Headers.Add("Content-Security-Policy", ContentSecurityPolicy);
+            res.Headers.Set("X-Content-Type-Options", "nosniff");
+            res.Headers.Set("Referrer-Policy", "no-referrer");
+            res.Headers.Set("X-Frame-Options", "DENY");
+            res.Headers.Set("Content-Security-Policy", ContentSecurityPolicy);
         }
-        private static void SetNoStore(HttpListenerResponse res) => res.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
+        private static void SetNoStore(HttpListenerResponse res) => res.Headers.Set(HttpResponseHeader.CacheControl, "no-store");
+        private static void SetImmutable(HttpListenerResponse res) => res.Headers.Set(HttpResponseHeader.CacheControl, ImmutableCacheControl);
 
         private string BuildPlayerSnapshot(int count)
         {
@@ -148,7 +171,8 @@ namespace WebMap
             while (!stopping)
             {
                 playerSnapshot = BuildPlayerSnapshot(players == null ? 0 : players.Count);
-                configSnapshot = Encoding.UTF8.GetBytes(MakeClientConfigJson());
+                MapPublication publication = mapPublication;
+                configSnapshot = Encoding.UTF8.GetBytes(MakeClientConfigJson(publication == null ? string.Empty : publication.Digest));
                 PublishPinSnapshot();
                 if (fogTexture != null) fogSnapshot = WebMap.EncodeTextureToPng(fogTexture);
                 if (forceReload)
@@ -156,7 +180,7 @@ namespace WebMap
                     forceReload = false;
                     webSocketHandler.Sessions.Broadcast("reload");
                 }
-                yield return new WaitForSeconds(Mathf.Max(0.1f, PLAYER_UPDATE_INTERVAL));
+                yield return new WaitForSeconds(PLAYER_UPDATE_INTERVAL);
             }
         }
 
@@ -205,18 +229,22 @@ namespace WebMap
                     requestedFileBytes = File.ReadAllBytes(Path.Combine(publicRoot, requestedFile));
                     CacheStaticFile(requestedFile, requestedFileBytes);
                 }
-                catch { ZLog.LogError("WebMap: static file read failed"); requestedFileBytes = new byte[0]; }
+                catch (IOException) { ZLog.LogError("WebMap: static file read failed"); requestedFileBytes = new byte[0]; }
+                catch (UnauthorizedAccessException) { ZLog.LogError("WebMap: static file read failed"); requestedFileBytes = new byte[0]; }
             }
             if (requestedFileBytes.Length == 0)
             {
                 SetNoStore(res); res.StatusCode = 404; res.Close(); return;
             }
-            res.Headers.Add(HttpResponseHeader.CacheControl, "public, max-age=604800, immutable");
+            if (requestedFile == "index.html" || !IsHashedMainScript(requestedFile)) SetNoStore(res);
+            else SetImmutable(res);
             res.ContentType = contentTypes[fileExt];
             res.StatusCode = 200;
             res.ContentLength64 = requestedFileBytes.Length;
             res.Close(requestedFileBytes, true);
         }
+
+        private static bool IsHashedMainScript(string requestedFile) => HashedMainScript.IsMatch(requestedFile ?? string.Empty);
 
         private void CacheStaticFile(string name, byte[] contents)
         {
@@ -232,11 +260,35 @@ namespace WebMap
             byte[] bytes;
             switch (requestPath)
             {
-                case "/config": bytes = configSnapshot; SetNoStore(res); res.ContentType = "application/json"; break;
-                case "/map": bytes = mapSnapshot; res.Headers.Add(HttpResponseHeader.CacheControl, "public, max-age=604800, immutable"); res.ContentType = "application/octet-stream"; break;
-                case "/fog": bytes = fogSnapshot; SetNoStore(res); res.ContentType = "image/png"; break;
-                case "/pins": bytes = pinSnapshot; SetNoStore(res); res.ContentType = "text/csv"; break;
-                default: return false;
+                case "/config":
+                    bytes = configSnapshot;
+                    SetNoStore(res);
+                    res.ContentType = "application/json";
+                    break;
+                case "/map":
+                    MapPublication publication = mapPublication;
+                    string[] values = req.QueryString.GetValues("v");
+                    if (publication == null || values == null || values.Length != 1 ||
+                        !IsValidMapDigest(values[0]) || !FixedTimeEquals(values[0], publication.Digest))
+                    {
+                        SetNoStore(res); res.StatusCode = 404; res.Close(); return true;
+                    }
+                    bytes = publication.Bytes;
+                    SetImmutable(res);
+                    res.ContentType = "application/octet-stream";
+                    break;
+                case "/fog":
+                    bytes = fogSnapshot;
+                    SetNoStore(res);
+                    res.ContentType = "image/png";
+                    break;
+                case "/pins":
+                    bytes = pinSnapshot;
+                    SetNoStore(res);
+                    res.ContentType = "text/csv";
+                    break;
+                default:
+                    return false;
             }
             if (bytes == null || bytes.Length == 0)
             {
@@ -248,6 +300,25 @@ namespace WebMap
             return true;
         }
 
+        private static bool IsValidMapDigest(string value)
+        {
+            if (value == null || value.Length != 64) return false;
+            for (int i = 0; i < value.Length; i++)
+            {
+                char c = value[i];
+                if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
+            }
+            return true;
+        }
+
+        private static bool FixedTimeEquals(string left, string right)
+        {
+            if (left == null || right == null || left.Length != right.Length) return false;
+            int difference = 0;
+            for (int i = 0; i < left.Length; i++) difference |= left[i] ^ right[i];
+            return difference == 0;
+        }
+
         public void Reload() => forceReload = true;
         public void ListenAsync()
         {
@@ -255,7 +326,22 @@ namespace WebMap
             if (httpServer.IsListening) ZLog.Log("WebMap: HTTP server started");
             else ZLog.LogError("WebMap: HTTP server failed");
         }
-        public void PublishMap(byte[] bytes) => mapSnapshot = bytes ?? new byte[0];
+
+        public void PublishMap(byte[] bytes)
+        {
+            if (bytes == null || bytes.Length == 0)
+            {
+                mapPublication = null;
+                configSnapshot = Encoding.UTF8.GetBytes(MakeClientConfigJson(string.Empty));
+                return;
+            }
+            byte[] ownedBytes = (byte[])bytes.Clone();
+            string mapDigest;
+            using (SHA256 algorithm = SHA256.Create())
+                mapDigest = BitConverter.ToString(algorithm.ComputeHash(ownedBytes)).Replace("-", string.Empty).ToLowerInvariant();
+            mapPublication = new MapPublication(ownedBytes, mapDigest);
+            configSnapshot = Encoding.UTF8.GetBytes(MakeClientConfigJson(mapDigest));
+        }
 
         public void ReplacePins(IEnumerable<string> pins)
         {

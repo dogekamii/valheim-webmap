@@ -1,7 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
 using BepInEx.Configuration;
 using UnityEngine;
 
@@ -47,14 +45,37 @@ namespace WebMap
             DEFAULT_ZOOM = config.Bind("Texture", "default_zoom", DEFAULT_ZOOM, "Initial map zoom.").Value;
             ALWAYS_MAP = config.Bind("User", "always_map", ALWAYS_MAP, "Reveal traveled fog.").Value;
             ALWAYS_VISIBLE = config.Bind("User", "always_visible", ALWAYS_VISIBLE, "Legacy visibility option.").Value;
-            WORLD_VISIBILITY_MODE = NormalizeWorldVisibilityMode(config.Bind("World", "world_visibility_mode", WORLD_VISIBILITY_MODE,
-                new ConfigDescription("Browser fog policy.", new AcceptableValueList<string>("fogged", "hybrid", "full"))).Value);
+            WORLD_VISIBILITY_MODE = config.Bind("World", "world_visibility_mode", WORLD_VISIBILITY_MODE,
+                new ConfigDescription("Browser fog policy.", new AcceptableValueList<string>("fogged", "hybrid", "full"))).Value;
             DEBUG = config.Bind("Server", "debug", DEBUG, "Enable constant diagnostic categories.").Value;
             TEST = config.Bind("Server", "test", TEST, "Enable test features.").Value;
             QUORUM_ACTIVITY_JOURNAL_ENABLED = config.Bind("Quorum Bot", "activity_journal_enabled", QUORUM_ACTIVITY_JOURNAL_ENABLED, "Append private local activity records.").Value;
             DISCORD_WEBHOOK = config.Bind("Server", "discord_webhook", DISCORD_WEBHOOK, "Discord webhook URL.").Value;
             DISCORD_INVITE_URL = config.Bind("Server", "discord_invite_url", DISCORD_INVITE_URL, "Optional Discord invite URL.").Value;
             URL = config.Bind("Server", "webmap_url", URL, "Web map URL.").Value;
+            ValidateSettings();
+        }
+
+        private static void ValidateSettings()
+        {
+            TEXTURE_SIZE = ClampInt(TEXTURE_SIZE, 256, 2048);
+            PIXEL_SIZE = ClampInt(PIXEL_SIZE, 2, 100);
+            EXPLORE_RADIUS = ClampFinite(EXPLORE_RADIUS, 100f, 0f, 500f);
+            UPDATE_FOG_TEXTURE_INTERVAL = ClampFinite(UPDATE_FOG_TEXTURE_INTERVAL, 2f, 0.25f, 3600f);
+            SAVE_FOG_TEXTURE_INTERVAL = ClampFinite(SAVE_FOG_TEXTURE_INTERVAL, 30f, 1f, 86400f);
+            PLAYER_UPDATE_INTERVAL = ClampFinite(PLAYER_UPDATE_INTERVAL, 1f, 0.25f, 60f);
+            SERVER_PORT = ClampInt(SERVER_PORT, 1024, 65535);
+            MAX_PINS_PER_USER = ClampInt(MAX_PINS_PER_USER, 0, 200);
+            DEFAULT_ZOOM = ClampInt(DEFAULT_ZOOM, 50, 800);
+            WORLD_VISIBILITY_MODE = NormalizeWorldVisibilityMode(WORLD_VISIBILITY_MODE);
+        }
+
+        private static int ClampInt(int value, int minimum, int maximum) => Math.Min(maximum, Math.Max(minimum, value));
+
+        private static float ClampFinite(float value, float fallback, float minimum, float maximum)
+        {
+            if (float.IsNaN(value) || float.IsInfinity(value)) value = fallback;
+            return Math.Min(maximum, Math.Max(minimum, value));
         }
 
         internal static string NormalizeWorldVisibilityMode(string value)
@@ -69,37 +90,39 @@ namespace WebMap
             return WORLD_NAME;
         }
 
-        public static string MakeClientConfigJson()
+        [Serializable]
+        private sealed class ClientConfig
         {
-            Dictionary<string, object> config = new Dictionary<string, object>();
-            config["world_name"] = GetWorldName();
-            config["world_start_pos"] = WORLD_START_POS;
-            config["default_zoom"] = DEFAULT_ZOOM;
-            config["texture_size"] = TEXTURE_SIZE;
-            config["pixel_size"] = PIXEL_SIZE;
-            config["update_interval"] = PLAYER_UPDATE_INTERVAL;
-            config["explore_radius"] = EXPLORE_RADIUS;
-            config["always_map"] = ALWAYS_MAP;
-            config["always_visible"] = ALWAYS_VISIBLE;
-            config["world_visibility_mode"] = WORLD_VISIBILITY_MODE;
-            return DictionaryToJson(config);
+            public string map_digest;
+            public float world_start_x;
+            public float world_start_z;
+            public int default_zoom;
+            public int texture_size;
+            public int pixel_size;
+            public float update_interval;
+            public float explore_radius;
+            public bool always_map;
+            public bool always_visible;
+            public string world_visibility_mode;
         }
 
-        private static string DictionaryToJson(Dictionary<string, object> dict)
+        public static string MakeClientConfigJson(string mapDigest)
         {
-            IEnumerable<string> entries = dict.Select(d =>
+            ClientConfig config = new ClientConfig
             {
-                if (d.Value is float) return $"\"{d.Key}\": {((float)d.Value).ToString("F2", CultureInfo.InvariantCulture)}";
-                if (d.Value is string) return $"\"{d.Key}\": \"{d.Value}\"";
-                if (d.Value is bool) return $"\"{d.Key}\": {d.Value.ToString().ToLowerInvariant()}";
-                if (d.Value is Vector3)
-                {
-                    Vector3 value = (Vector3)d.Value;
-                    return $"\"{d.Key}\": \"{value.x.ToString("F2", CultureInfo.InvariantCulture)},{value.y.ToString("F2", CultureInfo.InvariantCulture)},{value.z.ToString("F2", CultureInfo.InvariantCulture)}\"";
-                }
-                return $"\"{d.Key}\": {d.Value}";
-            });
-            return "{\n    " + string.Join(",\n    ", entries) + "\n}\n";
+                map_digest = mapDigest ?? string.Empty,
+                world_start_x = WORLD_START_POS.x,
+                world_start_z = WORLD_START_POS.z,
+                default_zoom = DEFAULT_ZOOM,
+                texture_size = TEXTURE_SIZE,
+                pixel_size = PIXEL_SIZE,
+                update_interval = PLAYER_UPDATE_INTERVAL,
+                explore_radius = EXPLORE_RADIUS,
+                always_map = ALWAYS_MAP,
+                always_visible = ALWAYS_VISIBLE,
+                world_visibility_mode = WORLD_VISIBILITY_MODE
+            };
+            return JsonUtility.ToJson(config);
         }
     }
 }
