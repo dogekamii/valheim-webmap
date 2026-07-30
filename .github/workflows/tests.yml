@@ -43,3 +43,33 @@ jobs:
         run: |
           unexpected="$(find WebMap/bin/Release/net48 -maxdepth 1 -type f -name '*.dll' ! -name 'WebMap.dll' ! -name 'websocket-sharp.dll' -print -quit)"
           test -z "$unexpected"
+      - name: Inspect packaged privacy boundaries
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          bundles = list(Path("WebMap/web").glob("main.*.js"))
+          assert len(bundles) == 1, bundles
+          bundle_text = bundles[0].read_text(encoding="utf-8")
+          assert "console." not in bundle_text
+
+          plugin = Path("WebMap/bin/Release/net48/WebMap.dll")
+          dependency = Path("WebMap/bin/Release/net48/websocket-sharp.dll")
+          assert plugin.is_file() and plugin.stat().st_size > 0
+          assert dependency.is_file() and dependency.stat().st_size > 0
+          plugin_bytes = plugin.read_bytes()
+          forbidden_markers = (
+              "GetServerIP",
+              "HandleRoutedRPC:",
+              "WebMap: (say)",
+              "WebMap: (chat)",
+              "WebMap: (ping)",
+              "WebMap::DiscordWebHook::SendMessage",
+              "player _",
+          )
+          for marker in forbidden_markers:
+              assert marker.encode("utf-8") not in plugin_bytes, marker
+              assert marker.encode("utf-16-le") not in plugin_bytes, marker
+
+          print(f"Inspected {bundles[0].name}, WebMap.dll, and websocket-sharp.dll inventory")
+          PY
