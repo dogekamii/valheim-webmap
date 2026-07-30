@@ -1,0 +1,84 @@
+from pathlib import Path
+
+webmap_path = Path("WebMap/WebMap.cs")
+webmap = webmap_path.read_text(encoding="utf-8-sig")
+old_version = 'public const string VERSION = "2.7.3";'
+new_version = 'public const string VERSION = "2.7.4";'
+assert webmap.count(old_version) == 1
+webmap_path.write_text(webmap.replace(old_version, new_version), encoding="utf-8")
+
+server_path = Path("WebMap/MapDataServer.cs")
+server = server_path.read_text(encoding="utf-8")
+class_marker = "    public class MapDataServer\n    {\n"
+policy_block = """    public class MapDataServer
+    {
+        // 'self' limits HTTP(S) and WS(S) connections to the WebMap origin.
+        // data: is required only for the bundled favicon; inline styles are
+        // required by the renderer, while scripts remain external-only.
+        private const string ContentSecurityPolicy = \"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'\";
+
+"""
+assert server.count(class_marker) == 1
+assert "ContentSecurityPolicy" not in server
+server = server.replace(class_marker, policy_block)
+on_get = """            httpServer.OnGet += (sender, e) =>
+            {
+                if (ProcessSpecialRoutes(e)) return;
+"""
+on_get_secured = """            httpServer.OnGet += (sender, e) =>
+            {
+                ApplySecurityHeaders(e.Response);
+
+                if (ProcessSpecialRoutes(e)) return;
+"""
+assert server.count(on_get) == 1
+server = server.replace(on_get, on_get_secured)
+method_marker = "        public string getPlayerResponse(bool sendLast)\n"
+method_block = """        private static void ApplySecurityHeaders(HttpListenerResponse res)
+        {
+            res.Headers.Add(\"X-Content-Type-Options\", \"nosniff\");
+            res.Headers.Add(\"Referrer-Policy\", \"no-referrer\");
+            res.Headers.Add(\"X-Frame-Options\", \"DENY\");
+            res.Headers.Add(\"Content-Security-Policy\", ContentSecurityPolicy);
+        }
+
+        public string getPlayerResponse(bool sendLast)
+"""
+assert server.count(method_marker) == 1
+server_path.write_text(server.replace(method_marker, method_block), encoding="utf-8")
+
+workflow_path = Path(".github/workflows/tests.yml")
+workflow = workflow_path.read_text(encoding="utf-8")
+assert "Inspect packaged privacy boundaries" not in workflow
+privacy_step = r'''      - name: Inspect packaged privacy boundaries
+        run: |
+          python - <<'PYPRIVACY'
+          from pathlib import Path
+
+          bundles = list(Path("WebMap/web").glob("main.*.js"))
+          assert len(bundles) == 1, bundles
+          bundle_text = bundles[0].read_text(encoding="utf-8")
+          assert "console." not in bundle_text
+
+          plugin = Path("WebMap/bin/Release/net48/WebMap.dll")
+          dependency = Path("WebMap/bin/Release/net48/websocket-sharp.dll")
+          assert plugin.is_file() and plugin.stat().st_size > 0
+          assert dependency.is_file() and dependency.stat().st_size > 0
+          plugin_bytes = plugin.read_bytes()
+          forbidden_markers = (
+              "GetServerIP",
+              "HandleRoutedRPC:",
+              "WebMap: (say)",
+              "WebMap: (chat)",
+              "WebMap: (ping)",
+              "WebMap::DiscordWebHook::SendMessage",
+              "player _",
+          )
+          for marker in forbidden_markers:
+              assert marker.encode("utf-8") not in plugin_bytes, marker
+              assert marker.encode("utf-16-le") not in plugin_bytes, marker
+
+          print(f"Inspected {bundles[0].name}, WebMap.dll, and websocket-sharp.dll inventory")
+          PYPRIVACY
+'''
+workflow_path.write_text(workflow + privacy_step, encoding="utf-8")
