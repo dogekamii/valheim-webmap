@@ -23,11 +23,7 @@ namespace WebMap
 
         public DiscordWebHook(string url)
         {
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                return;
-            }
-
+            if (string.IsNullOrWhiteSpace(url)) return;
             Uri parsedUri;
             if (!Uri.TryCreate(url, UriKind.Absolute, out parsedUri) ||
                 !string.Equals(parsedUri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
@@ -40,11 +36,7 @@ namespace WebMap
             webHookUri = parsedUri;
             queue = new BlockingCollection<string>(new ConcurrentQueue<string>(), boundedCapacity: QueueCapacity);
             cancellation = new CancellationTokenSource();
-            worker = new Thread(WorkerLoop)
-            {
-                IsBackground = true,
-                Name = "WebMap webhook"
-            };
+            worker = new Thread(WorkerLoop) { IsBackground = true, Name = "WebMap webhook" };
             worker.Start();
         }
 
@@ -52,16 +44,9 @@ namespace WebMap
         {
             if (Volatile.Read(ref disposed) != 0 || queue == null || message == null ||
                 message.Length == 0 || message.Length > MaxPayloadLength || !IsAllowedEvent(message)) return;
-            try
-            {
-                queue.TryAdd(message);
-            }
-            catch (InvalidOperationException)
-            {
-            }
-            catch (ObjectDisposedException)
-            {
-            }
+            try { queue.TryAdd(message); }
+            catch (ObjectDisposedException) { }
+            catch (InvalidOperationException) { }
         }
 
         private static bool IsAllowedEvent(string message)
@@ -76,17 +61,10 @@ namespace WebMap
         {
             try
             {
-                foreach (string message in queue.GetConsumingEnumerable(cancellation.Token))
-                {
-                    Deliver(message);
-                }
+                foreach (string message in queue.GetConsumingEnumerable(cancellation.Token)) Deliver(message);
             }
-            catch (OperationCanceledException)
-            {
-            }
-            catch (ObjectDisposedException)
-            {
-            }
+            catch (OperationCanceledException) { }
+            catch (ObjectDisposedException) { }
         }
 
         private void Deliver(string message)
@@ -95,7 +73,6 @@ namespace WebMap
             {
                 byte[] payload = Encoding.UTF8.GetBytes("content=" + Uri.EscapeDataString(message));
                 if (payload.Length > MaxPayloadBytes) return;
-
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(webHookUri);
                 request.Method = "POST";
                 request.ContentType = "application/x-www-form-urlencoded";
@@ -103,15 +80,13 @@ namespace WebMap
                 request.AllowAutoRedirect = false;
                 request.Timeout = RequestTimeoutMilliseconds;
                 request.ReadWriteTimeout = RequestTimeoutMilliseconds;
-
                 using (CancellationTokenRegistration registration = cancellation.Token.Register(request.Abort))
-                using (Stream requestStream = request.GetRequestStream())
                 {
-                    requestStream.Write(payload, 0, payload.Length);
-                }
-
-                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                {
+                    using (Stream requestStream = request.GetRequestStream())
+                    {
+                        requestStream.Write(payload, 0, payload.Length);
+                    }
+                    using (HttpWebResponse response = (HttpWebResponse)request.GetResponse()) { }
                 }
             }
             catch (WebException)
@@ -122,30 +97,18 @@ namespace WebMap
             {
                 if (!cancellation.IsCancellationRequested) ZLog.LogWarning("WebMap: webhook delivery failed");
             }
-            catch (ObjectDisposedException)
-            {
-            }
+            catch (ObjectDisposedException) { }
         }
 
         public void Dispose()
         {
             if (Interlocked.Exchange(ref disposed, 1) != 0) return;
             if (queue == null || cancellation == null) return;
-
-            try
-            {
-                queue.CompleteAdding();
-            }
-            catch (InvalidOperationException)
-            {
-            }
+            try { queue.CompleteAdding(); }
+            catch (InvalidOperationException) { }
             cancellation.Cancel();
-
             if (worker != null && Thread.CurrentThread != worker && !worker.Join(ShutdownWaitMilliseconds))
-            {
                 ZLog.LogWarning("WebMap: webhook shutdown timed out");
-            }
-
             queue.Dispose();
             cancellation.Dispose();
         }

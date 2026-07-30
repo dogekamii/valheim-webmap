@@ -18,12 +18,7 @@ namespace WebMap
     {
         internal readonly long Id;
         internal readonly string Alias;
-
-        internal PublicIdentityValue(long id, string alias)
-        {
-            Id = id;
-            Alias = alias;
-        }
+        internal PublicIdentityValue(long id, string alias) { Id = id; Alias = alias; }
     }
 
     internal static class PublicIdentity
@@ -41,7 +36,6 @@ namespace WebMap
             {
                 PublicIdentityValue existing;
                 if (Identities.TryGetValue(owner, out existing)) return existing;
-
                 long id;
                 byte[] bytes = new byte[8];
                 do
@@ -49,7 +43,6 @@ namespace WebMap
                     Generator.GetBytes(bytes);
                     id = (long)(BitConverter.ToUInt64(bytes, 0) & (ulong)MaxJavaScriptInteger);
                 } while (id == 0 || !UsedIds.Add(id));
-
                 int aliasNumber = nextAlias++;
                 PublicIdentityValue identity = new PublicIdentityValue(id, $"Player {aliasNumber}");
                 Identities.Add(owner, identity);
@@ -61,7 +54,6 @@ namespace WebMap
     public class WebSocketHandler : WebSocketBehavior
     {
         private bool playersSent;
-
         protected override void OnMessage(MessageEventArgs e)
         {
             if (!e.IsText || e.RawData == null || e.RawData.Length > 32 || playersSent ||
@@ -93,12 +85,10 @@ namespace WebMap
         private const int MaxPublicPinTextLength = 80;
         private const int MaxCoordinateTextLength = 32;
         private const float MaxPinCoordinate = 12000f;
-
         private static readonly Dictionary<string, string> contentTypes = new Dictionary<string, string> {
             {"html", "text/html"}, {"js", "text/javascript"}, {"css", "text/css"},
             {"png", "image/png"}, {"jpg", "image/jpeg"}, {"webp", "image/webp"}
         };
-
         private static MapDataServer __instance;
         private readonly object fileCacheSync = new object();
         private readonly object lifecycleSync = new object();
@@ -117,7 +107,6 @@ namespace WebMap
         private volatile byte[] mapSnapshot = new byte[0];
         private volatile byte[] pinSnapshot = new byte[0];
         private volatile byte[] fogSnapshot = new byte[0];
-
         public Texture2D fogTexture;
         public List<ZNetPeer> players = new List<ZNetPeer>();
 
@@ -145,15 +134,10 @@ namespace WebMap
             res.Headers.Add("X-Frame-Options", "DENY");
             res.Headers.Add("Content-Security-Policy", ContentSecurityPolicy);
         }
+        private static void SetNoStore(HttpListenerResponse res) => res.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
 
-        private static void SetNoStore(HttpListenerResponse res)
+        private string BuildPlayerSnapshot(int count)
         {
-            res.Headers.Add(HttpResponseHeader.CacheControl, "no-store");
-        }
-
-        private string BuildPlayerSnapshot()
-        {
-            int count = players == null ? 0 : players.Count;
             int boundedCount = Math.Min(MaxPublicOnlineCount, Math.Max(0, count));
             return "players\n{\"online\":" + boundedCount.ToString(CultureInfo.InvariantCulture) + "}";
         }
@@ -162,7 +146,7 @@ namespace WebMap
         {
             while (!stopping)
             {
-                playerSnapshot = BuildPlayerSnapshot();
+                playerSnapshot = BuildPlayerSnapshot(players == null ? 0 : players.Count);
                 configSnapshot = Encoding.UTF8.GetBytes(MakeClientConfigJson());
                 PublishPinSnapshot();
                 if (fogTexture != null) fogSnapshot = WebMap.EncodeTextureToPng(fogTexture);
@@ -192,8 +176,7 @@ namespace WebMap
             if (coroutine != null && owner != null) owner.StopCoroutine(coroutine);
             try
             {
-                foreach (string id in new List<string>(webSocketHandler.Sessions.IDs))
-                    webSocketHandler.Sessions.CloseSession(id);
+                foreach (string id in new List<string>(webSocketHandler.Sessions.IDs)) webSocketHandler.Sessions.CloseSession(id);
             }
             catch { ZLog.LogWarning("WebMap: websocket shutdown failed"); }
             try { httpServer.Stop(); }
@@ -210,10 +193,7 @@ namespace WebMap
             string fileExt = Path.GetExtension(requestedFile).TrimStart('.');
             if (!contentTypes.ContainsKey(fileExt))
             {
-                SetNoStore(res);
-                res.StatusCode = 404;
-                res.Close();
-                return;
+                SetNoStore(res); res.StatusCode = 404; res.Close(); return;
             }
             byte[] requestedFileBytes = null;
             lock (fileCacheSync) fileCache.TryGetValue(requestedFile, out requestedFileBytes);
@@ -224,18 +204,11 @@ namespace WebMap
                     requestedFileBytes = File.ReadAllBytes(Path.Combine(publicRoot, requestedFile));
                     CacheStaticFile(requestedFile, requestedFileBytes);
                 }
-                catch
-                {
-                    ZLog.LogError("WebMap: static file read failed");
-                    requestedFileBytes = new byte[0];
-                }
+                catch { ZLog.LogError("WebMap: static file read failed"); requestedFileBytes = new byte[0]; }
             }
             if (requestedFileBytes.Length == 0)
             {
-                SetNoStore(res);
-                res.StatusCode = 404;
-                res.Close();
-                return;
+                SetNoStore(res); res.StatusCode = 404; res.Close(); return;
             }
             res.Headers.Add(HttpResponseHeader.CacheControl, "public, max-age=604800, immutable");
             res.ContentType = contentTypes[fileExt];
@@ -247,10 +220,7 @@ namespace WebMap
         private void CacheStaticFile(string name, byte[] contents)
         {
             if (!CACHE_SERVER_FILES) return;
-            lock (fileCacheSync)
-            {
-                if (!fileCache.ContainsKey(name)) fileCache.Add(name, contents);
-            }
+            lock (fileCacheSync) if (!fileCache.ContainsKey(name)) fileCache.Add(name, contents);
         }
 
         private bool ProcessSpecialRoutes(HttpRequestEventArgs e)
@@ -261,35 +231,15 @@ namespace WebMap
             byte[] bytes;
             switch (requestPath)
             {
-                case "/config":
-                    bytes = configSnapshot;
-                    SetNoStore(res);
-                    res.ContentType = "application/json";
-                    break;
-                case "/map":
-                    bytes = mapSnapshot;
-                    res.Headers.Add(HttpResponseHeader.CacheControl, "public, max-age=604800, immutable");
-                    res.ContentType = "application/octet-stream";
-                    break;
-                case "/fog":
-                    bytes = fogSnapshot;
-                    SetNoStore(res);
-                    res.ContentType = "image/png";
-                    break;
-                case "/pins":
-                    bytes = pinSnapshot;
-                    SetNoStore(res);
-                    res.ContentType = "text/csv";
-                    break;
-                default:
-                    return false;
+                case "/config": bytes = configSnapshot; SetNoStore(res); res.ContentType = "application/json"; break;
+                case "/map": bytes = mapSnapshot; res.Headers.Add(HttpResponseHeader.CacheControl, "public, max-age=604800, immutable"); res.ContentType = "application/octet-stream"; break;
+                case "/fog": bytes = fogSnapshot; SetNoStore(res); res.ContentType = "image/png"; break;
+                case "/pins": bytes = pinSnapshot; SetNoStore(res); res.ContentType = "text/csv"; break;
+                default: return false;
             }
             if (bytes == null || bytes.Length == 0)
             {
-                SetNoStore(res);
-                res.StatusCode = 404;
-                res.Close();
-                return true;
+                SetNoStore(res); res.StatusCode = 404; res.Close(); return true;
             }
             res.StatusCode = 200;
             res.ContentLength64 = bytes.Length;
@@ -298,14 +248,12 @@ namespace WebMap
         }
 
         public void Reload() => forceReload = true;
-
         public void ListenAsync()
         {
             httpServer.Start();
             if (httpServer.IsListening) ZLog.Log("WebMap: HTTP server started");
             else ZLog.LogError("WebMap: HTTP server failed");
         }
-
         public void PublishMap(byte[] bytes) => mapSnapshot = bytes ?? new byte[0];
 
         public void ReplacePins(IEnumerable<string> pins)
@@ -324,11 +272,7 @@ namespace WebMap
             }
             PublishPinSnapshot();
         }
-
-        public string[] GetPrivatePinsSnapshot()
-        {
-            lock (pinSync) return privatePins.ToArray();
-        }
+        public string[] GetPrivatePinsSnapshot() { lock (pinSync) return privatePins.ToArray(); }
 
         public int CountPinsForOwner(string owner)
         {
@@ -413,94 +357,62 @@ namespace WebMap
             pinSnapshot = Encoding.UTF8.GetBytes(string.Join("\n", serialized));
         }
 
-        internal static bool IsValidOwnerKey(string owner)
-        {
-            return !string.IsNullOrWhiteSpace(owner) && IsSafeRecordField(owner, MaxOwnerKeyLength, false);
-        }
-
+        internal static bool IsValidOwnerKey(string owner) => !string.IsNullOrWhiteSpace(owner) && IsSafeRecordField(owner, MaxOwnerKeyLength, false);
         private static bool IsSafeRecordField(string value, int maxLength, bool allowEmpty)
         {
             if (value == null || value.Length > maxLength || (!allowEmpty && value.Length == 0)) return false;
-            for (int i = 0; i < value.Length; i++)
-                if (value[i] == ',' || char.IsControl(value[i])) return false;
+            for (int i = 0; i < value.Length; i++) if (value[i] == ',' || char.IsControl(value[i])) return false;
             return true;
         }
-
         private static bool IsSafePinToken(string value, int maxLength)
         {
             if (string.IsNullOrEmpty(value) || value.Length > maxLength) return false;
             for (int i = 0; i < value.Length; i++)
             {
-                char character = value[i];
-                bool safe = (character >= 'a' && character <= 'z') ||
-                            (character >= 'A' && character <= 'Z') ||
-                            (character >= '0' && character <= '9') ||
-                            character == '-' || character == '_' || character == '.';
-                if (!safe) return false;
+                char c = value[i];
+                if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.')) return false;
             }
             return true;
         }
-
         private static bool IsSafeLegacyName(string value) => IsSafeRecordField(value, MaxLegacyNameLength, true);
         private static bool IsSafePublicPinText(string value) => IsSafeRecordField(value, MaxPublicPinTextLength, true);
-
         private static bool TryParseCoordinate(string value, out float coordinate)
         {
             coordinate = 0f;
-            if (string.IsNullOrEmpty(value) || value.Length > MaxCoordinateTextLength ||
-                !string.Equals(value, value.Trim(), StringComparison.Ordinal)) return false;
+            if (string.IsNullOrEmpty(value) || value.Length > MaxCoordinateTextLength || !string.Equals(value, value.Trim(), StringComparison.Ordinal)) return false;
             NumberStyles style = NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint;
-            if (!float.TryParse(value, style, CultureInfo.InvariantCulture, out coordinate) ||
-                float.IsNaN(coordinate) || float.IsInfinity(coordinate) || Math.Abs(coordinate) > MaxPinCoordinate)
+            if (!float.TryParse(value, style, CultureInfo.InvariantCulture, out coordinate) || float.IsNaN(coordinate) || float.IsInfinity(coordinate) || Math.Abs(coordinate) > MaxPinCoordinate)
             {
-                coordinate = 0f;
-                return false;
+                coordinate = 0f; return false;
             }
             return true;
         }
-
         private static bool TryGetPinOwner(string record, out string owner)
         {
             string[] parts;
-            if (!TryParsePrivatePin(record, out parts))
-            {
-                owner = null;
-                return false;
-            }
-            owner = parts[0];
-            return true;
+            if (!TryParsePrivatePin(record, out parts)) { owner = null; return false; }
+            owner = parts[0]; return true;
         }
-
         private static bool TryParsePrivatePin(string record, out string[] pinParts)
         {
             pinParts = null;
-            if (string.IsNullOrWhiteSpace(record) || record.Length > MaxPrivatePinRecordLength ||
-                record.IndexOf('\r') >= 0 || record.IndexOf('\n') >= 0) return false;
+            if (string.IsNullOrWhiteSpace(record) || record.Length > MaxPrivatePinRecordLength || record.IndexOf('\r') >= 0 || record.IndexOf('\n') >= 0) return false;
             string[] parts = record.Split(',');
-            if (parts.Length != 7 || !IsValidOwnerKey(parts[0]) ||
-                !IsSafePinToken(parts[1], MaxPinIdLength) ||
-                !IsSafePinToken(parts[2], MaxPinTypeLength) ||
-                !IsSafeLegacyName(parts[3]) || !IsSafePublicPinText(parts[6])) return false;
+            if (parts.Length != 7 || !IsValidOwnerKey(parts[0]) || !IsSafePinToken(parts[1], MaxPinIdLength) || !IsSafePinToken(parts[2], MaxPinTypeLength) || !IsSafeLegacyName(parts[3]) || !IsSafePublicPinText(parts[6])) return false;
             float x;
             float z;
             if (!TryParseCoordinate(parts[4], out x) || !TryParseCoordinate(parts[5], out z)) return false;
-            pinParts = parts;
-            return true;
+            pinParts = parts; return true;
         }
-
         private static bool TrySerializePublicPin(string record, out string serialized)
         {
             serialized = null;
             string[] pinParts;
             if (!TryParsePrivatePin(record, out pinParts) || pinParts.Length != 7) return false;
             PublicIdentityValue identity = PublicIdentity.ForOwner(pinParts[0]);
-            serialized = string.Join(",", new[] {
-                identity.Id.ToString(CultureInfo.InvariantCulture), pinParts[1], pinParts[2], identity.Alias,
-                pinParts[4], pinParts[5], pinParts[6]
-            });
+            serialized = string.Join(",", new[] { identity.Id.ToString(CultureInfo.InvariantCulture), pinParts[1], pinParts[2], identity.Alias, pinParts[4], pinParts[5], pinParts[6] });
             return true;
         }
-
         private static string FixedValue(float value) => value.ToString("F2", CultureInfo.InvariantCulture);
     }
 }
