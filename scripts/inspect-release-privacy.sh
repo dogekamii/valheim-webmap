@@ -24,7 +24,7 @@ package="$extract_root/WebMap"
 
 mapfile -t dlls < <(find "$package" -maxdepth 1 -type f -name '*.dll' -print | sort)
 if [[ ${#dlls[@]} -ne 2 ]] || [[ ! -s "$package/WebMap.dll" ]] || [[ ! -s "$package/websocket-sharp.dll" ]]; then
-    echo "privacy inspection failed: expected exactly two archive DLLs" >&2
+    echo "privacy inspection failed: expected exactly two DLLs in the archive" >&2
     exit 1
 fi
 if [[ ! -s "$source_built_dependency" ]] || ! cmp -s "$source_built_dependency" "$package/websocket-sharp.dll"; then
@@ -88,6 +88,10 @@ for token in "${telemetry_tokens[@]}"; do
     fi
 done
 
+# Game/framework TypeRef and MemberRef names can occur in a managed DLL without
+# being serialized or reachable from the public protocol. Inspect those names in
+# owned source above; reserve binary symbol rejection for unambiguous WebMap
+# telemetry types/methods so harmless compiler metadata cannot fail a release.
 for token in 'MapMessage' 'BroadcastMessage' 'BroadcastPing' 'AddExtraPlayer' 'SendPlayerList'; do
     if grep -aFq -- "$token" "$package/WebMap.dll"; then
         echo "privacy inspection failed: compiled public telemetry symbol" >&2
