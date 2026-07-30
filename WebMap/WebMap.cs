@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
@@ -26,7 +26,7 @@ namespace WebMap
     {
         public const string GUID = "com.github.h0tw1r3.valheim.webmap";
         public const string NAME = "WebMap";
-        public const string VERSION = "2.7.3";
+        public const string VERSION = "2.7.4";
 
         private static readonly string[] ALLOWED_PINS = { "dot", "fire", "mine", "house", "cave" };
 

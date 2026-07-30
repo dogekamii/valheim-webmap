@@ -3,7 +3,7 @@
 A **server-side** Valheim dedicated-server mod that publishes a live browser map with player positions, exploration, pings, and shared pins. Players use unmodded clients — no client mod is required.
 
 > [!IMPORTANT]
-> **Current-Valheim compatibility:** WebMap **v2.7.3** was tested successfully on **2026-07-27** with **Valheim Dedicated Server `l-0.221.12`** (Steam build **`21981590`**, network version **36**) on Linux, using BepInExPack Valheim **5.4.2333** and a crossplay-enabled AMP instance. This compatibility statement applies to that exact tested server build; newer Valheim builds should be validated before production rollout.
+> **Current-Valheim compatibility:** WebMap **v2.7.4** was tested successfully on **2026-07-27** with **Valheim Dedicated Server `l-0.221.12`** (Steam build **`21981590`**, network version **36**) on Linux, using BepInExPack Valheim **5.4.2333** and a crossplay-enabled AMP instance. This compatibility statement applies to that exact tested server build; newer Valheim builds should be validated before production rollout.
 
 ## Features
 
@@ -20,14 +20,14 @@ A **server-side** Valheim dedicated-server mod that publishes a live browser map
 
 | Component | Tested value |
 |---|---|
-| WebMap | `2.7.3` |
+| WebMap | `2.7.4` |
 | Valheim Dedicated Server | `l-0.221.12` |
 | Steam dedicated-server build | `21981590` |
 | Valheim network version | `36` |
 | Loader | BepInExPack Valheim `5.4.2333` |
 | Server mode | Linux dedicated server, crossplay enabled |
 
-The v2.7.3 release retains the guarded current-Valheim world-setup listener startup, adds owner-controlled `fogged`, `hybrid`, and `full` map visibility, and keeps browser clients cache-fresh through fingerprinted JavaScript bundles with a no-store HTML entrypoint.
+The v2.7.4 release retains the guarded current-Valheim world-setup listener startup, adds owner-controlled `fogged`, `hybrid`, and `full` map visibility, and keeps browser clients cache-fresh through fingerprinted JavaScript bundles with a no-store HTML entrypoint.
 
 ## Installation
 

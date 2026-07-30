@@ -2,6 +2,6 @@
     "name": "WebMap",
     "description": "Current-Valheim-compatible server-side WebMap for dedicated Valheim servers.",
     "website_url": "https://github.com/dogekamii/valheim-webmap",
-    "version_number": "2.7.3",
+    "version_number": "2.7.4",
     "dependencies": []
 }
