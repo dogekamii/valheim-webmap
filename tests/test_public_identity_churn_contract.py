@@ -3,6 +3,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVER = (ROOT / "WebMap" / "MapDataServer.cs").read_text(encoding="utf-8")
+WEBMAP = (ROOT / "WebMap" / "WebMap.cs").read_text(encoding="utf-8")
 
 
 def method_body(source, signature):
@@ -155,6 +156,15 @@ def test_add_live_broadcast_cannot_reallocate_after_the_pin_lock_is_released():
     assert add.count("PublicIdentity.TryForOwner") == 1
     assert "TrySerializePublicPin(record" not in add
     assert "SerializePublicPin(parsed, identity)" in add
+
+
+def test_replace_inspection_and_file_ingestion_are_bounded_before_validation():
+    replace = method_body(SERVER, "public void ReplacePins")
+    assert "int inspected = 0;" in replace
+    assert "if (inspected++ >= MaxPrivatePins) break;" in replace
+    assert replace.index("inspected++") < replace.index("TryParsePrivatePin")
+    assert "File.ReadLines(" in WEBMAP
+    assert "File.ReadAllLines(" not in WEBMAP
 
 
 def test_identity_capacity_tracks_current_valid_retained_pin_owners():
