@@ -35,7 +35,7 @@ def test_map_route_requires_one_exact_valid_digest_and_fails_closed():
     assert "SetNoStore" in routes
     assert "application/octet-stream" in routes
     assert "ContentLength64" in routes
-    assert "map?v=" in INDEX and "encodeURIComponent(config.map_digest)" in INDEX
+    assert "map?v=" in INDEX and "encodeURIComponent(config.mapDigest)" in INDEX
     assert "URL.createObjectURL" not in INDEX
 
 
