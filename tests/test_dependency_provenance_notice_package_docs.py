@@ -56,7 +56,7 @@ def test_source_build_precedes_webmap_and_package_proves_artifact_continuity():
     inspector = (ROOT / "scripts" / "inspect-release-privacy.sh").read_text(encoding="utf-8")
     source_task = build.index('Task("BuildWebsocketSharp")')
     source_command = build.index("xbuild", source_task)
-    webmap_build = build.index('DotNetBuild("./WebMap/WebMap.csproj"')
+    webmap_build = build.index('dotnet build \\"./WebMap/WebMap.csproj\\"')
     package = build.index("scripts/package-release.js", webmap_build)
     inspect = build.index("scripts/inspect-release-privacy.sh", package)
     assert source_task < source_command < webmap_build < package < inspect

@@ -28,9 +28,10 @@ if [[ "$command_status" -ne 0 ]]; then
         reason="no diagnostic output was produced"
     fi
     echo "build step failed: ${step_name}; exit=${command_status}; reason=${reason}" >&2
-    if [[ "${GITHUB_ACTIONS:-}" == "true" ]]; then
-        echo "::error title=${step_name} failed::command=${step_name}; exit=${command_status}; reason=${reason}"
-    fi
+    # This wrapper executes inside docker run, where GitHub's environment
+    # variables are intentionally not inherited. Workflow commands are plain
+    # output elsewhere and become annotations when the caller is Actions.
+    echo "::error title=${step_name} failed::command=${step_name}; exit=${command_status}; reason=${reason}"
 fi
 
 exit "$command_status"
