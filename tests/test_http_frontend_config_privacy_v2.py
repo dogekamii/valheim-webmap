@@ -11,7 +11,7 @@ PLAYERS = (ROOT / "WebMap" / "web-src" / "players.js").read_text(encoding="utf-8
 HTML = (ROOT / "WebMap" / "web" / "index.html").read_text(encoding="utf-8")
 DRAWDOWN = ROOT / "WebMap" / "web" / "drawdown.js"
 BUILD = (ROOT / "build.sh").read_text(encoding="utf-8")
-INSPECTOR = ROOT / "scripts" / "inspect-release-privacy.py"
+INSPECTOR = ROOT / "scripts" / "inspect-release-privacy.sh"
 
 
 def test_dynamic_and_error_routes_are_no_store_and_security_headers_are_global():
@@ -109,4 +109,4 @@ def test_canonical_release_build_runs_packaged_two_dll_and_js_privacy_inspection
         "ping\\n", "max_health", "m_playerName", "m_publicRefPos", "inBed",
     ):
         assert forbidden in inspector
-    assert "inspect-release-privacy.py" in BUILD
+    assert "inspect-release-privacy.sh" in BUILD

@@ -13,7 +13,7 @@ def test_unity_state_is_published_only_by_a_main_thread_coroutine():
     assert "System.Threading.Timer" not in SERVER
     assert "PublishSnapshotsOnMainThread" in SERVER
     assert "IEnumerator" in SERVER and "WaitForSeconds" in SERVER
-    publisher = section(SERVER, "PublishSnapshotsOnMainThread", "public static MapDataServer")
+    publisher = section(SERVER, "public IEnumerator PublishSnapshotsOnMainThread()", "public static MapDataServer")
     assert "players.Count" in publisher
     assert "EncodeTextureToPng" in publisher
     assert "ZDOMan" not in publisher
